@@ -1,6 +1,8 @@
 """Loopback HTTP fixture for the future M3 end-to-end test; no dependencies."""
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import signal
+import threading
 
 
 class API(BaseHTTPRequestHandler):
@@ -42,6 +44,9 @@ class API(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     server = ThreadingHTTPServer(("127.0.0.1", 8080), API)
+    # shutdown() must run outside the serve_forever thread. An explicit handler
+    # also permits graceful SIGTERM when Python is PID 1 in the example container.
+    signal.signal(signal.SIGTERM, lambda *_: threading.Thread(target=server.shutdown, daemon=True).start())
     try:
         server.serve_forever()
     except KeyboardInterrupt:
