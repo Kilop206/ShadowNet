@@ -1,4 +1,4 @@
-name: C++ reverse proxy
+name: C++ reliable tunnel
 on: [push, pull_request, workflow_dispatch]
 permissions:
   contents: read
@@ -32,6 +32,11 @@ jobs:
         with:
           name: linux-${{ matrix.compiler }}-${{ matrix.sanitizers }}-logs
           path: build/bootstrap/Testing/Temporary/
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linux-${{ matrix.compiler }}-${{ matrix.sanitizers }}-load
+          path: build/bootstrap/tests/reliability-load.json
   windows-mingw:
     runs-on: windows-latest
     defaults:
@@ -52,3 +57,8 @@ jobs:
       - run: cmake --preset bootstrap
       - run: cmake --build --preset bootstrap --parallel 2
       - run: ctest --preset bootstrap
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-mingw-load
+          path: build/bootstrap/tests/reliability-load.json

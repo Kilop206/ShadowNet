@@ -2,6 +2,7 @@
 #include "secure_session.hpp"
 #include "proxy_router.hpp"
 #include "https_server.hpp"
+#include <shadow/protocol/outbox.hpp>
 #include <shadow/core/error.hpp>
 #include <shadow/observability/log.hpp>
 #include <shadow/security/tls.hpp>
@@ -25,7 +26,7 @@ class SecureGateway : public std::enable_shared_from_this<SecureGateway> {
 public:
     SecureGateway(asio::io_context& context, const configuration::Gateway& config)
         : context_(context), tls_(security::make_tls_context(config.tls, true)), acceptor_(context), config_(config),
-          proxy_(std::make_shared<detail::GatewayProxy>(context, config)) {
+          proxy_(std::make_shared<detail::GatewayProxy>(context, config)), tunnel_budget_(config.tunnel_buffer_budget_bytes) {
         const tcp::endpoint endpoint(asio::ip::make_address(config.bind_host), config.port);
         acceptor_.open(endpoint.protocol());
 #ifndef _WIN32
@@ -66,11 +67,16 @@ private:
             if (self->sessions_.size() >= self->config_.max_connections) {
                 Code ignored; socket.close(ignored);
                 log(Level::warning, "gateway", "connection_limit_reached");
-            } else self->session(std::move(socket));
+            } else if (auto reservation = self->tunnel_budget_.acquire(protocol::tunnel::Outbox::session_reservation)) {
+                self->session(std::move(socket), std::move(reservation));
+            } else {
+                Code ignored; socket.close(ignored);
+                log(Level::warning, "gateway", "tunnel_buffer_limit");
+            }
             self->accept();
         });
     }
-    void session(tcp::socket socket) {
+    void session(tcp::socket socket, std::shared_ptr<BufferBudget::Lease> reservation) {
         const auto owner = std::weak_ptr<SecureGateway>(shared_from_this());
         auto holder = std::make_shared<std::weak_ptr<SecureSession>>();
         detail::SessionOptions options;
@@ -78,6 +84,8 @@ private:
         options.timeout = config_.timeout;
         options.interval = config_.heartbeat_interval;
         options.pong_timeout = config_.heartbeat_timeout;
+        options.write_timeout = config_.write_timeout;
+        options.reservation = std::move(reservation);
         options.authorize = [owner](const std::string& fingerprint) {
             if (const auto gateway = owner.lock()) {
                 for (const auto& agent : gateway->config_.authorized_agents)
@@ -114,6 +122,7 @@ private:
     configuration::Gateway config_;
     std::shared_ptr<detail::GatewayProxy> proxy_;
     std::shared_ptr<detail::HttpsServer> http_;
+    BufferBudget tunnel_budget_;
     std::unordered_set<std::shared_ptr<SecureSession>> sessions_;
     std::set<std::string> names_;
     bool stopping_ = false;
@@ -123,25 +132,27 @@ class SecureAgent : public std::enable_shared_from_this<SecureAgent> {
 public:
     SecureAgent(asio::io_context& context, const configuration::Agent& config, std::function<void(int)> done)
         : context_(context), config_(config), tls_(security::make_tls_context(config.tls, false)), retry_(context),
-          done_(std::move(done)), backoff_(config.reconnect.initial), random_(std::random_device{}()) {}
+          done_(std::move(done)), backoff_(config.reconnect.initial), random_(std::random_device{}()),
+          budget_(std::make_shared<BufferBudget>(config.buffer_budget_bytes)) {}
     void start() {
         detail::SessionOptions options;
         options.name = config_.name;
         options.timeout = config_.timeout;
+        options.write_timeout = config_.write_timeout;
         const auto owner = std::weak_ptr<SecureAgent>(shared_from_this());
         auto holder = std::make_shared<std::weak_ptr<SecureSession>>();
         auto proxy = std::make_shared<detail::AgentProxy>(context_, config_, [holder](const protocol::tunnel::Frame& frame) {
             if (const auto session = holder->lock()) {
-                if (session->transmit(frame)) return true;
-                session->stop();
+                return session->transmit(frame);
             }
             return false;
-        });
+        }, budget_);
         options.ready = [owner, proxy] {
             if (const auto agent = owner.lock()) agent->ready_at_ = std::chrono::steady_clock::now();
             proxy->start();
         };
         options.message = [proxy](const protocol::tunnel::Frame& frame) { return proxy->message(frame); };
+        options.writable = [proxy] { proxy->writable(); };
         options.done = [owner, proxy](const std::string& reason) {
             proxy->stop();
             if (const auto agent = owner.lock()) agent->disconnected(reason);
@@ -188,6 +199,7 @@ private:
     std::chrono::milliseconds backoff_;
     std::chrono::steady_clock::time_point ready_at_{};
     std::mt19937_64 random_;
+    std::shared_ptr<BufferBudget> budget_;
     bool stopping_ = false, completed_ = false;
 };
 }

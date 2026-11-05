@@ -17,9 +17,9 @@ using Code = boost::system::error_code;
 class LocalHttp::Impl : public std::enable_shared_from_this<Impl> {
 public:
     Impl(asio::io_context& context, const configuration::Service& service, px::Request request,
-        std::chrono::milliseconds timeout, Completion done)
+        std::chrono::milliseconds timeout, Completion done, std::shared_ptr<BufferBudget::Lease> reservation)
         : socket_(context), timer_(context), endpoint_(asio::ip::make_address(service.local_host), service.local_port),
-          timeout_(timeout), done_(std::move(done)), id_(request.id), head_(request.method == "HEAD") {
+          timeout_(timeout), done_(std::move(done)), reservation_(std::move(reservation)), id_(request.id), head_(request.method == "HEAD") {
         request_.version(11);
         request_.method_string(request.method);
         request_.target(request.target);
@@ -96,6 +96,7 @@ private:
     tcp::endpoint endpoint_;
     std::chrono::milliseconds timeout_;
     Completion done_;
+    std::shared_ptr<BufferBudget::Lease> reservation_;
     std::uint64_t id_;
     bool head_, closed_ = false;
     unsigned interim_ = 0;
@@ -104,8 +105,8 @@ private:
     beast::flat_buffer buffer_{px::max_headers + 8192};
 };
 LocalHttp::LocalHttp(asio::io_context& context, const configuration::Service& service,
-    protocol::proxy::Request request, std::chrono::milliseconds timeout, Completion done)
-    : impl_(std::make_shared<Impl>(context, service, std::move(request), timeout, std::move(done))) {}
+    protocol::proxy::Request request, std::chrono::milliseconds timeout, Completion done, std::shared_ptr<BufferBudget::Lease> reservation)
+    : impl_(std::make_shared<Impl>(context, service, std::move(request), timeout, std::move(done), std::move(reservation))) {}
 LocalHttp::~LocalHttp() = default;
 void LocalHttp::start() { impl_->start(); }
 void LocalHttp::cancel() { impl_->cancel(); }

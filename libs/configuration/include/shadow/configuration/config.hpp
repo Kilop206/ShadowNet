@@ -41,6 +41,8 @@ struct Agent {
     Reconnect reconnect;
     std::size_t max_in_flight = 16;
     std::chrono::milliseconds backend_timeout{3000};
+    std::size_t buffer_budget_bytes = std::size_t{64} * 1024 * 1024;
+    std::chrono::milliseconds write_timeout{10000};
 };
 struct Https {
     std::string bind_host;
@@ -50,6 +52,7 @@ struct Https {
     std::size_t max_in_flight = 16;
     unsigned requests_per_second = 100;
     std::chrono::milliseconds timeout{5000};
+    std::size_t buffer_budget_bytes = std::size_t{64} * 1024 * 1024;
 };
 struct Gateway {
     std::string bind_host;
@@ -62,6 +65,8 @@ struct Gateway {
     std::chrono::milliseconds heartbeat_interval{1000};
     std::chrono::milliseconds heartbeat_timeout{3000};
     std::optional<Https> http;
+    std::size_t tunnel_buffer_budget_bytes = std::size_t{128} * 1024 * 1024;
+    std::chrono::milliseconds write_timeout{10000};
 };
 Agent load_agent(const std::filesystem::path& path);
 Gateway load_gateway(const std::filesystem::path& path);

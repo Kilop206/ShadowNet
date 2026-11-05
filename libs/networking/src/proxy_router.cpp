@@ -109,8 +109,8 @@ void GatewayProxy::stop() {
     for (const auto& [id, pending] : pending_) { (void)pending; failed.push_back(id); }
     for (const auto id : failed) complete(id, px::error_response(id, 503));
 }
-AgentProxy::AgentProxy(boost::asio::io_context& context, configuration::Agent config, Send send)
-    : context_(context), config_(std::move(config)), send_(std::move(send)) {
+AgentProxy::AgentProxy(boost::asio::io_context& context, configuration::Agent config, Send send, std::shared_ptr<BufferBudget> budget)
+    : context_(context), config_(std::move(config)), send_(std::move(send)), budget_(std::move(budget)) {
     for (const auto& service : config_.services) services_.push_back({service.name, service.hostname});
 }
 void AgentProxy::start() {
@@ -129,7 +129,10 @@ bool AgentProxy::message(const wire::Frame& frame) {
     if (frame.type == wire::Type::cancel) {
         const auto id = px::decode_id(frame.payload);
         if (const auto found = requests_.find(id); found != requests_.end()) {
-            auto request = found->second; requests_.erase(found); request->cancel();
+            if (found->second.response) log(Level::info, "agent", "response_cancelled id=" + std::to_string(id));
+            auto local = found->second.local;
+            requests_.erase(found); std::erase(responses_, id);
+            if (local) local->cancel();
         }
         return true;
     }
@@ -137,6 +140,9 @@ bool AgentProxy::message(const wire::Frame& frame) {
     auto request = px::decode_request(frame.payload);
     if (request.id <= last_id_) return false;
     last_id_ = request.id;
+    // A conforming gateway has at most 64 pending requests. A small bounded
+    // allowance for rejected requests keeps hostile peers from growing replies.
+    if (requests_.size() >= 128) return false;
     const auto service = std::find_if(config_.services.begin(), config_.services.end(), [&](const auto& value) { return value.name == request.service; });
     const auto reply = [&](unsigned status) {
         auto response = px::error_response(request.id, status);
@@ -144,27 +150,55 @@ bool AgentProxy::message(const wire::Frame& frame) {
             response.fields.emplace_back("content-length", std::to_string(response.body.size()));
             response.body.clear();
         }
-        return send_({wire::Type::response, px::encode_response(response)});
+        requests_.emplace(request.id, Work{{}, {}, wire::Frame{wire::Type::response, px::encode_response(response)}});
+        responses_.push_back(request.id);
+        writable();
+        return true;
     };
     if (service == config_.services.end()) return reply(404);
     if (px::hostname(px::single_field(request.fields, "host")) != service->hostname) return reply(403);
     if (requests_.size() >= config_.max_in_flight) return reply(503);
+    auto reservation = budget_->acquire(4 * wire::max_message);
+    if (!reservation) return reply(503);
     const auto id = request.id;
     auto local = std::make_shared<LocalHttp>(context_, *service, std::move(request), config_.backend_timeout,
         [owner = weak_from_this(), id](const px::Response& response) {
             if (const auto agent = owner.lock(); agent && !agent->stopped_) {
-                agent->requests_.erase(id);
-                (void)agent->send_({wire::Type::response, px::encode_response(response)});
+                const auto found = agent->requests_.find(id);
+                if (found == agent->requests_.end()) return;
+                found->second.local.reset();
+                found->second.response = wire::Frame{wire::Type::response, px::encode_response(response)};
+                agent->responses_.push_back(id);
+                agent->writable();
             }
-        });
-    requests_.emplace(id, local);
+        }, reservation);
+    requests_.emplace(id, Work{local, std::move(reservation), {}});
     local->start();
     return true;
+}
+void AgentProxy::writable() {
+    if (stopped_) return;
+    while (!responses_.empty()) {
+        const auto id = responses_.front();
+        const auto found = requests_.find(id);
+        if (found == requests_.end()) { responses_.pop_front(); continue; }
+        auto& response = found->second.response;
+        if (!response) { responses_.pop_front(); continue; }
+        if (!send_(*response)) {
+            if (!backpressured_) log(Level::info, "agent", "response_backpressure id=" + std::to_string(id));
+            backpressured_ = true;
+            return;
+        }
+        responses_.pop_front(); requests_.erase(found);
+    }
+    if (backpressured_) log(Level::info, "agent", "response_resumed");
+    backpressured_ = false;
 }
 void AgentProxy::stop() {
     if (stopped_) return;
     stopped_ = true;
     auto requests = std::move(requests_);
-    for (const auto& [id, request] : requests) { (void)id; request->cancel(); }
+    responses_.clear();
+    for (const auto& [id, work] : requests) { (void)id; if (work.local) work.local->cancel(); }
 }
 } // namespace shadow::networking::detail

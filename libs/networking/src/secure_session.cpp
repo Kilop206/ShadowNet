@@ -2,6 +2,7 @@
 #include <shadow/core/error.hpp>
 #include <shadow/observability/log.hpp>
 #include <shadow/protocol/tunnel.hpp>
+#include <shadow/protocol/outbox.hpp>
 #include <utility>
 #include <boost/asio/steady_timer.hpp>
 #include <boost/asio/ssl/stream.hpp>
@@ -29,9 +30,9 @@ class SecureSession::Impl : public std::enable_shared_from_this<Impl> {
 public:
     Impl(tcp::socket socket, std::shared_ptr<asio::ssl::context> tls, SessionOptions options)
         : tls_(std::move(tls)), ws_(std::move(socket), *tls_), resolver_(ws_.get_executor()),
-          deadline_(ws_.get_executor()), heartbeat_(ws_.get_executor()), options_(std::move(options)), name_(options_.name) {
+          deadline_(ws_.get_executor()), heartbeat_(ws_.get_executor()), write_deadline_(ws_.get_executor()), options_(std::move(options)), name_(options_.name) {
         ws_.read_message_max(wire::control_message);
-        ws_.write_buffer_bytes(512);
+        ws_.write_buffer_bytes(16384);
         ws_.binary(true);
         ws_.set_option(websocket::stream_base::timeout{options_.timeout, websocket::stream_base::none(), false});
         request_.header_limit(8192);
@@ -227,26 +228,34 @@ private:
     }
     bool send(const wire::Frame& frame) {
         if (closed_) return false;
-        auto bytes = std::make_shared<std::vector<std::uint8_t>>(wire::encode(frame));
-        if (writes_.size() >= 64 || queued_bytes_ + bytes->size() > 4 * wire::max_message) {
+        if (!outbox_.push(frame)) {
             if (frame.type <= wire::Type::goodbye) finish("write_queue_limit");
             return false;
         }
-        const bool idle = writes_.empty();
-        queued_bytes_ += bytes->size();
-        writes_.push_back(std::move(bytes));
-        if (idle) write();
+        if (!writing_) write();
         return true;
     }
     void write() {
-        const auto bytes = writes_.front();
+        writing_ = true;
+        const auto bytes = outbox_.front();
+        const auto generation = ++write_generation_;
+        write_deadline_.expires_after(options_.write_timeout);
+        write_deadline_.async_wait([self = shared_from_this(), generation](Code error) {
+            if (!error && generation == self->write_generation_) self->finish("tunnel_write_timeout");
+        });
         ws_.async_write(asio::buffer(*bytes), [self = shared_from_this(), bytes](Code error, std::size_t) {
             if (self->closed_) return;
+            ++self->write_generation_; self->write_deadline_.cancel();
             if (error) { self->finish("tunnel_write_failed"); return; }
-            self->queued_bytes_ -= bytes->size();
-            self->writes_.pop_front();
-            if (!self->writes_.empty()) self->write();
+            self->outbox_.pop(); self->writing_ = false;
+            if (!self->outbox_.empty()) self->write();
             else if (self->stopping_) self->close_websocket();
+            if (!self->stopping_ && self->options_.writable) {
+                asio::post(self->ws_.get_executor(), [owner = std::weak_ptr<Impl>(self)] {
+                    if (const auto connection = owner.lock(); connection && !connection->closed_ && !connection->stopping_)
+                        connection->options_.writable();
+                });
+            }
         });
     }
     void graceful(bool notify) {
@@ -257,7 +266,7 @@ private:
         heartbeat_.cancel();
         arm_deadline(std::chrono::milliseconds(1000), "shutdown_timeout");
         if (notify) send({wire::Type::goodbye, "shutdown"});
-        else if (writes_.empty()) close_websocket();
+        else if (outbox_.empty()) close_websocket();
     }
     void close_websocket() {
         if (close_started_ || closed_) return;
@@ -274,6 +283,8 @@ private:
         cancel_deadline();
         ++heartbeat_generation_;
         heartbeat_.cancel();
+        ++write_generation_; write_deadline_.cancel();
+        outbox_.clear();
         resolver_.cancel();
         Code ignored;
         auto& socket = beast::get_lowest_layer(ws_).socket();
@@ -287,15 +298,16 @@ private:
     std::shared_ptr<asio::ssl::context> tls_;
     websocket::stream<beast::ssl_stream<beast::tcp_stream>, false> ws_;
     tcp::resolver resolver_;
-    asio::steady_timer deadline_, heartbeat_;
+    asio::steady_timer deadline_, heartbeat_, write_deadline_;
     SessionOptions options_;
     std::string name_, host_, authority_, session_id_;
     beast::flat_buffer read_buffer_{wire::max_message};
     beast::flat_buffer upgrade_buffer_{8192};
     http::request_parser<http::empty_body> request_;
     websocket::response_type upgrade_response_;
-    std::deque<std::shared_ptr<std::vector<std::uint8_t>>> writes_;
-    std::size_t queued_bytes_ = 0;
+    wire::Outbox outbox_;
+    std::uint64_t write_generation_ = 0;
+    bool writing_ = false;
     std::uint64_t sequence_ = 0, deadline_generation_ = 0, heartbeat_generation_ = 0;
     bool active_ = false, closed_ = false, stopping_ = false, claimed_ = false;
     bool waiting_pong_ = false, close_started_ = false;

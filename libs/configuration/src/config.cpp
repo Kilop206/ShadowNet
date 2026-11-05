@@ -107,7 +107,7 @@ Agent load_agent(const std::filesystem::path& path) {
         else keys(root, {"transport", "agent", "services", "security"});
         const auto node = root["agent"];
         if (mode == Transport::local_tcp) keys(node, {"name", "gateway_host", "port", "timeout_ms"});
-        else keys(node, {"name", "gateway_host", "port", "timeout_ms", "reconnect", "max_in_flight", "backend_timeout_ms"});
+        else keys(node, {"name", "gateway_host", "port", "timeout_ms", "reconnect", "max_in_flight", "backend_timeout_ms", "buffer_budget_bytes", "write_timeout_ms"});
         Agent result;
         result.name = scalar(node, "name");
         result.gateway_host = scalar(node, "gateway_host");
@@ -121,6 +121,8 @@ Agent load_agent(const std::filesystem::path& path) {
             result.tls = tls_files(root["security"], path);
             if (node["max_in_flight"]) result.max_in_flight = number(node, "max_in_flight", {.min = 1, .max = 64});
             if (node["backend_timeout_ms"]) result.backend_timeout = std::chrono::milliseconds(number(node, "backend_timeout_ms", {.min = 100, .max = 60000}));
+            if (node["buffer_budget_bytes"]) result.buffer_budget_bytes = number(node, "buffer_budget_bytes", {.min = 8 * 1024 * 1024, .max = 1024 * 1024 * 1024});
+            if (node["write_timeout_ms"]) result.write_timeout = std::chrono::milliseconds(number(node, "write_timeout_ms", {.min = 100, .max = 60000}));
             const auto reconnect = node["reconnect"];
             keys(reconnect, {"enabled", "initial_ms", "max_ms"});
             result.reconnect.enabled = boolean(reconnect, "enabled");
@@ -156,7 +158,7 @@ Gateway load_gateway(const std::filesystem::path& path) {
         else keys(root, {"transport", "gateway", "security", "authorized_agents", "http"});
         const auto node = root["gateway"];
         if (mode == Transport::local_tcp) keys(node, {"bind_host", "port", "timeout_ms", "max_connections"});
-        else keys(node, {"bind_host", "port", "timeout_ms", "max_connections", "heartbeat_interval_ms", "heartbeat_timeout_ms"});
+        else keys(node, {"bind_host", "port", "timeout_ms", "max_connections", "heartbeat_interval_ms", "heartbeat_timeout_ms", "tunnel_buffer_budget_bytes", "write_timeout_ms"});
         Gateway result;
         result.bind_host = scalar(node, "bind_host");
         result.port = static_cast<std::uint16_t>(number(node, "port", {.min = 1, .max = 65535}));
@@ -167,6 +169,8 @@ Gateway load_gateway(const std::filesystem::path& path) {
         else {
             if (!ip_address(result.bind_host)) throw Error("gateway bind_host must be an IP literal");
             result.tls = tls_files(root["security"], path);
+            if (node["tunnel_buffer_budget_bytes"]) result.tunnel_buffer_budget_bytes = number(node, "tunnel_buffer_budget_bytes", {.min = 16 * 1024 * 1024, .max = 1024 * 1024 * 1024});
+            if (node["write_timeout_ms"]) result.write_timeout = std::chrono::milliseconds(number(node, "write_timeout_ms", {.min = 100, .max = 60000}));
             result.heartbeat_interval = std::chrono::milliseconds(number(node, "heartbeat_interval_ms", {.min = 100, .max = 60000}));
             result.heartbeat_timeout = std::chrono::milliseconds(number(node, "heartbeat_timeout_ms", {.min = 100, .max = 60000}));
             const auto agents = root["authorized_agents"];
@@ -194,7 +198,7 @@ Gateway load_gateway(const std::filesystem::path& path) {
                 result.authorized_agents.push_back(std::move(value));
             }
             if (const auto node_http = root["http"]) {
-                keys(node_http, {"bind_host", "port", "security", "max_connections", "max_in_flight", "requests_per_second", "request_timeout_ms"});
+                keys(node_http, {"bind_host", "port", "security", "max_connections", "max_in_flight", "requests_per_second", "request_timeout_ms", "buffer_budget_bytes"});
                 Https value;
                 value.bind_host = scalar(node_http, "bind_host");
                 if (!ip_address(value.bind_host)) throw Error("HTTPS bind_host must be an IP literal");
@@ -205,6 +209,7 @@ Gateway load_gateway(const std::filesystem::path& path) {
                 value.max_in_flight = number(node_http, "max_in_flight", {.min = 1, .max = 64});
                 value.requests_per_second = number(node_http, "requests_per_second", {.min = 1, .max = 10000});
                 value.timeout = std::chrono::milliseconds(number(node_http, "request_timeout_ms", {.min = 100, .max = 60000}));
+                if (node_http["buffer_budget_bytes"]) value.buffer_budget_bytes = number(node_http, "buffer_budget_bytes", {.min = 8 * 1024 * 1024, .max = 1024 * 1024 * 1024});
                 if (hostnames.empty()) throw Error("HTTPS requires at least one authorized service");
                 result.http = std::move(value);
             }

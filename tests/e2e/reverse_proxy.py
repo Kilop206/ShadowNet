@@ -8,6 +8,7 @@ import hashlib
 import http.client
 import importlib.util
 import json
+import os
 from pathlib import Path
 import shutil
 import socket
@@ -25,6 +26,9 @@ from tunnel_peer import Peer, services, request as wire_request, response as wir
 parser = argparse.ArgumentParser()
 for argument in ("agent", "gateway", "cli", "source", "openssl"):
     parser.add_argument("--" + argument, required=True)
+parser.add_argument("--load-seconds", type=float, default=float(os.environ.get("SHADOW_LOAD_SECONDS", "5")))
+parser.add_argument("--load-workers", type=int, default=int(os.environ.get("SHADOW_LOAD_WORKERS", "12")))
+parser.add_argument("--load-report", type=Path, default=Path("reliability-load.json"))
 ARGS, TEST_ARGS = parser.parse_known_args()
 
 
@@ -62,7 +66,7 @@ class Process:
         self.output.close()
 
 
-class ReverseProxy(unittest.TestCase):
+class ProxyHarness(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.root = Path.cwd().resolve() / ("proxy-fixtures-" + uuid.uuid4().hex)
@@ -116,11 +120,12 @@ class ReverseProxy(unittest.TestCase):
         target.write_text(text, encoding="utf-8")
         return target
 
-    def agent_config(self, selected=None, profile="agent", name="home-server", maximum=16, timeout=1200, reconnect=False):
+    def agent_config(self, selected=None, profile="agent", name="home-server", maximum=16, timeout=1200, reconnect=False, budget=67108864, write_timeout=10000):
         if selected is None:
             selected = [("api", "api.example.test", self.api.server_port), ("website", "app.example.test", self.website.server_port)]
         text = (f"transport: wss\nagent:\n  name: {name}\n  gateway_host: 127.0.0.1\n  port: {self.wss_port}\n"
                 f"  timeout_ms: 2000\n  max_in_flight: {maximum}\n  backend_timeout_ms: {timeout}\n"
+                f"  buffer_budget_bytes: {budget}\n  write_timeout_ms: {write_timeout}\n"
                 f"  reconnect:\n    enabled: {str(reconnect).lower()}\n    initial_ms: 100\n    max_ms: 400\n")
         text += self.credentials(profile) + "services:\n"
         if not selected:
@@ -129,11 +134,12 @@ class ReverseProxy(unittest.TestCase):
             text += f"  - {{name: {service}, hostname: {host}, local_host: 127.0.0.1, local_port: {local_port}}}\n"
         return self.write(text)
 
-    def gateway_config(self, policies=None, timeout=1800, maximum=16, connections=64, rate=100):
+    def gateway_config(self, policies=None, timeout=1800, maximum=16, connections=64, rate=100, budget=67108864, tunnel_budget=134217728, write_timeout=10000):
         if policies is None:
             policies = [("home-server", "agent", [("api", "api.example.test"), ("website", "app.example.test")])]
         text = (f"transport: wss\ngateway:\n  bind_host: 127.0.0.1\n  port: {self.wss_port}\n  timeout_ms: 2000\n"
-                "  max_connections: 16\n  heartbeat_interval_ms: 200\n  heartbeat_timeout_ms: 2000\n")
+                "  max_connections: 16\n  heartbeat_interval_ms: 200\n  heartbeat_timeout_ms: 2000\n"
+                f"  tunnel_buffer_budget_bytes: {tunnel_budget}\n  write_timeout_ms: {write_timeout}\n")
         text += self.credentials("gateway") + "authorized_agents:\n"
         for name, profile, entries in policies:
             text += f"  - name: {name}\n    certificate_sha256: {self.fingerprint(profile)}\n    services:\n"
@@ -141,6 +147,7 @@ class ReverseProxy(unittest.TestCase):
                 text += f"      - {{name: {service}, hostname: {host}}}\n"
         text += (f"http:\n  bind_host: 127.0.0.1\n  port: {self.http_port}\n  max_connections: {connections}\n"
                  f"  max_in_flight: {maximum}\n  requests_per_second: {rate}\n  request_timeout_ms: {timeout}\n")
+        text += f"  buffer_budget_bytes: {budget}\n"
         return self.write(text + self.credentials("gateway", indent="  ", mutual=False))
 
     def launch(self, executable, config):
@@ -194,6 +201,7 @@ class ReverseProxy(unittest.TestCase):
     def fields(headers):
         return {key.lower(): value for key, value in headers}
 
+class ReverseProxy(ProxyHarness):
     def test_two_services_route_by_hostname_over_verified_https(self):
         self.start()
         for host, expected in (("api.example.test", "api"), ("app.example.test", "website"), ("API.Example.Test:8443", "api")):

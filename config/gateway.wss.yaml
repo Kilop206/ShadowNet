@@ -7,6 +7,8 @@ gateway:
   max_connections: 64
   heartbeat_interval_ms: 1000
   heartbeat_timeout_ms: 3000
+  tunnel_buffer_budget_bytes: 134217728
+  write_timeout_ms: 10000
 security:
   ca_file: certs/agents-ca.crt
   certificate_file: certs/gateway.crt
@@ -24,6 +26,7 @@ http:
   max_in_flight: 16
   requests_per_second: 100
   request_timeout_ms: 5000
+  buffer_budget_bytes: 67108864
   security:
     certificate_file: certs/public-https.crt
     private_key_file: certs/public-https.key

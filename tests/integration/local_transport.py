@@ -211,7 +211,7 @@ class Transport(unittest.TestCase):
             self.assertEqual(result.returncode, 2)
         result = subprocess.run([ARGS.cli, "version"], capture_output=True, text=True, timeout=3)
         self.assertEqual(result.returncode, 0)
-        self.assertIn("0.3.0", result.stdout)
+        self.assertIn("0.4.0", result.stdout)
 
     @unittest.skipIf(sys.platform == "win32", "Windows process.terminate does not deliver POSIX signals")
     def test_graceful_shutdown_closes_active_session(self):

@@ -11,6 +11,9 @@
 #include <unordered_set>
 #include <optional>
 #include <charconv>
+#include <list>
+#include <shadow/core/buffer_budget.hpp>
+#include <shadow/protocol/tunnel.hpp>
 
 namespace shadow::networking::detail {
 namespace asio = boost::asio;
@@ -22,10 +25,11 @@ using Code = boost::system::error_code;
 namespace {
 class Frontend : public std::enable_shared_from_this<Frontend> {
 public:
+    using Admission = std::function<void(std::shared_ptr<Frontend>)>;
     Frontend(tcp::socket socket, std::shared_ptr<asio::ssl::context> tls, std::chrono::milliseconds timeout,
-        Dispatch dispatch, std::function<void()> done)
+        Dispatch dispatch, Admission admission, std::function<void()> done)
         : tls_(std::move(tls)), stream_(std::move(socket), *tls_), timer_(stream_.get_executor()),
-          timeout_(timeout), dispatch_(std::move(dispatch)), done_(std::move(done)) {
+          timeout_(timeout), dispatch_(std::move(dispatch)), admission_(std::move(admission)), done_(std::move(done)) {
         Code error;
         const auto endpoint = stream_.next_layer().remote_endpoint(error);
         if (!error) client_ip_ = endpoint.address().to_string();
@@ -55,6 +59,23 @@ public:
         stream_.next_layer().close(ignored);
         const auto keep_alive = shared_from_this();
         auto done = std::move(done_); done();
+    }
+    bool closed() const { return closed_; }
+    void admitted(std::shared_ptr<BufferBudget::Lease> reservation) {
+        if (closed_) return;
+        reservation_ = std::move(reservation);
+        auto& request = parser_.get();
+        if (request.count(http::field::expect) != 0) {
+            if (request.count(http::field::expect) != 1 || px::lower(request[http::field::expect]) != "100-continue") {
+                respond(px::error_response(0, 417)); return;
+            }
+            interim_.emplace(http::status::continue_, 11);
+            http::async_write(stream_, *interim_, [self = shared_from_this()](Code error, std::size_t) {
+                if (self->closed_) return;
+                if (error) { self->stop(); return; }
+                self->read_body();
+            });
+        } else read_body();
     }
 private:
     void arm(std::chrono::milliseconds timeout) {
@@ -94,17 +115,7 @@ private:
                 request.set(http::field::max_forwards, std::to_string(value - 1));
             }
         } catch (const Error&) { respond(px::error_response(0, 400)); return; }
-        if (request.count(http::field::expect) != 0) {
-            if (request.count(http::field::expect) != 1 || px::lower(request[http::field::expect]) != "100-continue") {
-                respond(px::error_response(0, 417)); return;
-            }
-            interim_.emplace(http::status::continue_, 11);
-            http::async_write(stream_, *interim_, [self = shared_from_this()](Code error, std::size_t) {
-                if (self->closed_) return;
-                if (error) { self->stop(); return; }
-                self->read_body();
-            });
-        } else read_body();
+        admission_(shared_from_this());
     }
     void read_body() {
         http::async_read(stream_, buffer_, parser_, [self = shared_from_this()](Code error, std::size_t) {
@@ -158,6 +169,8 @@ private:
     asio::steady_timer timer_;
     std::chrono::milliseconds timeout_;
     Dispatch dispatch_;
+    Admission admission_;
+    std::shared_ptr<BufferBudget::Lease> reservation_;
     std::function<void()> done_;
     CancelRequest cancel_;
     http::request_parser<http::string_body> parser_;
@@ -173,7 +186,7 @@ private:
 class HttpsServer::Impl : public std::enable_shared_from_this<Impl> {
 public:
     Impl(asio::io_context& context, configuration::Https config, Dispatch dispatch)
-        : config_(std::move(config)), tls_(security::make_https_context(config_.tls)), acceptor_(context), dispatch_(std::move(dispatch)) {
+        : context_(context), config_(std::move(config)), tls_(security::make_https_context(config_.tls)), acceptor_(context), dispatch_(std::move(dispatch)), budget_(config_.buffer_budget_bytes) {
         const tcp::endpoint endpoint(asio::ip::make_address(config_.bind_host), config_.port);
         acceptor_.open(endpoint.protocol());
 #ifndef _WIN32
@@ -182,6 +195,11 @@ public:
         acceptor_.bind(endpoint); acceptor_.listen(static_cast<int>(config_.max_connections));
     }
     void start() {
+        budget_.on_release([owner = weak_from_this()] {
+            if (const auto server = owner.lock()) asio::post(server->context_, [owner] {
+                if (const auto current = owner.lock()) current->drain();
+            });
+        });
         observability::log(observability::Level::info, "gateway", "https_listening port=" + std::to_string(config_.port));
         accept();
     }
@@ -193,6 +211,20 @@ public:
         for (const auto& session : sessions) session->stop();
     }
 private:
+    void drain() {
+        std::erase_if(waiting_, [](const auto& entry) { const auto frontend = entry.lock(); return !frontend || frontend->closed(); });
+        while (!stopping_ && !waiting_.empty()) {
+            auto reservation = budget_.acquire(4 * protocol::tunnel::max_message);
+            if (!reservation) break;
+            auto frontend = waiting_.front().lock(); waiting_.pop_front();
+            if (frontend) frontend->admitted(std::move(reservation));
+        }
+    }
+    void admit(const std::shared_ptr<Frontend>& frontend) {
+        waiting_.push_back(frontend);
+        drain();
+        if (!waiting_.empty()) observability::log(observability::Level::info, "gateway", "http_buffer_wait");
+    }
     void accept() {
         acceptor_.async_accept([self = shared_from_this()](Code error, tcp::socket socket) {
             if (self->stopping_) return;
@@ -201,6 +233,9 @@ private:
             else {
                 auto holder = std::make_shared<std::weak_ptr<Frontend>>();
                 auto session = std::make_shared<Frontend>(std::move(socket), self->tls_, self->config_.timeout, self->dispatch_,
+                    [owner = std::weak_ptr<Impl>(self)](const std::shared_ptr<Frontend>& frontend) {
+                        if (const auto server = owner.lock()) server->admit(frontend);
+                    },
                     [owner = std::weak_ptr<Impl>(self), holder] {
                         if (const auto server = owner.lock()) if (const auto frontend = holder->lock()) server->sessions_.erase(frontend);
                     });
@@ -209,10 +244,13 @@ private:
             self->accept();
         });
     }
+    asio::io_context& context_;
     configuration::Https config_;
     std::shared_ptr<asio::ssl::context> tls_;
     tcp::acceptor acceptor_;
     Dispatch dispatch_;
+    BufferBudget budget_;
+    std::list<std::weak_ptr<Frontend>> waiting_;
     std::unordered_set<std::shared_ptr<Frontend>> sessions_;
     bool stopping_ = false;
 };

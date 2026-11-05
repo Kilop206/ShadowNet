@@ -8,13 +8,13 @@ import struct
 
 
 def exact(sock, size):
-    result = b""
+    result = bytearray()
     while len(result) < size:
         part = sock.recv(size - len(result))
         if not part:
             raise EOFError("peer closed")
-        result += part
-    return result
+        result.extend(part)
+    return bytes(result)
 
 
 def header(sock):
@@ -93,19 +93,27 @@ class Peer:
         self.sock.sendall(head + message)
 
     def receive(self):
-        first = exact(self.sock, 2)
-        if first[0] & 15 != 2:
-            raise EOFError("peer sent a close/control frame")
-        size = first[1] & 127
-        if size == 126:
-            size = struct.unpack("!H", exact(self.sock, 2))[0]
-        elif size == 127:
-            size = struct.unpack("!Q", exact(self.sock, 8))[0]
-        assert size <= 1081356
-        mask = exact(self.sock, 4) if first[1] & 128 else None
-        data = exact(self.sock, size)
-        if mask:
-            data = bytes(value ^ mask[index % 4] for index, value in enumerate(data))
+        message = bytearray()
+        initial = True
+        while True:
+            first = exact(self.sock, 2)
+            if first[0] & 15 not in (2 if initial else 0,):
+                raise EOFError("peer sent a close/control frame")
+            initial = False
+            size = first[1] & 127
+            if size == 126:
+                size = struct.unpack("!H", exact(self.sock, 2))[0]
+            elif size == 127:
+                size = struct.unpack("!Q", exact(self.sock, 8))[0]
+            assert len(message) + size <= 1081356
+            mask = exact(self.sock, 4) if first[1] & 128 else None
+            part = exact(self.sock, size)
+            if mask:
+                part = bytes(value ^ mask[index % 4] for index, value in enumerate(part))
+            message.extend(part)
+            if first[0] & 128:
+                break
+        data = bytes(message)
         assert data[:5] == b"SHDW\x03" and len(data) == 12 + struct.unpack("!I", data[8:12])[0]
         return data[5], data[12:]
 

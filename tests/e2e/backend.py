@@ -41,7 +41,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         body = self.rfile.read(length)
         with self.server.lock:
-            self.server.records.append((self.command, self.path, body))
+            self.server.records.append((self.command, self.path, b"" if "load=" in self.path else body))
         parsed = urlparse(self.path)
         delay = int(parse_qs(parsed.query).get("delay", ["0"])[0])
         if delay:
@@ -87,6 +87,9 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(b"HTTP/1.1 103 Early Hints\r\nLink: </style.css>; rel=preload\r\n\r\n")
         if path == "/fixed":
             payload = ("hello-" + self.server.label).encode()
+        elif path == "/large":
+            prefix = (self.path + ":" + self.server.label + ":").encode()
+            payload = prefix + b"x" * (1048576 - len(prefix))
         elif path in ("/binary", "/gzip"):
             payload = body if self.command != "GET" else bytes(range(256))
             if path == "/gzip":

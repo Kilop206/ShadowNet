@@ -4,6 +4,7 @@
 #include "local_http.hpp"
 #include <boost/asio/steady_timer.hpp>
 #include <map>
+#include <deque>
 #include <set>
 
 namespace shadow::networking::detail {
@@ -39,17 +40,25 @@ private:
 class AgentProxy : public std::enable_shared_from_this<AgentProxy> {
 public:
     using Send = std::function<bool(const protocol::tunnel::Frame&)>;
-    AgentProxy(boost::asio::io_context& context, configuration::Agent config, Send send);
+    AgentProxy(boost::asio::io_context& context, configuration::Agent config, Send send, std::shared_ptr<BufferBudget> budget);
     void start();
     bool message(const protocol::tunnel::Frame& frame);
+    void writable();
     void stop();
 private:
     boost::asio::io_context& context_;
     configuration::Agent config_;
     Send send_;
+    std::shared_ptr<BufferBudget> budget_;
+    struct Work {
+        std::shared_ptr<LocalHttp> local;
+        std::shared_ptr<BufferBudget::Lease> reservation;
+        std::optional<protocol::tunnel::Frame> response;
+    };
     std::vector<protocol::proxy::Service> services_;
-    std::map<std::uint64_t, std::shared_ptr<LocalHttp>> requests_;
+    std::map<std::uint64_t, Work> requests_;
+    std::deque<std::uint64_t> responses_;
     std::uint64_t last_id_ = 0;
-    bool registered_ = false, stopped_ = false;
+    bool registered_ = false, stopped_ = false, backpressured_ = false;
 };
 } // namespace shadow::networking::detail
