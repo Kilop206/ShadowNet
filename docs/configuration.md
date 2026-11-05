@@ -1,5 +1,49 @@
 # Configuração
 
+## Proxy HTTPS do M3
+
+O protocolo do túnel é v3; atualizar Agent/Gateway juntos. O listener público
+é opt-in: sem `http`, o Gateway só recebe túneis mTLS. Cada entrada de
+`authorized_agents` pode ter uma lista `services` de até 32 pares `name` e
+`hostname`. Nomes são únicos por agente; hostnames são únicos no Gateway.
+Uma lista vazia não autoriza publicação. O registro pelo Agent é atômico e
+precisa corresponder à política, sem transmitir IPs/portas locais.
+
+```yaml
+http:
+  bind_host: 0.0.0.0
+  port: 8443
+  max_connections: 32
+  max_in_flight: 16
+  requests_per_second: 100
+  request_timeout_ms: 5000
+  security:
+    certificate_file: certs/public-https.crt
+    private_key_file: certs/public-https.key
+```
+
+Templates completos em `config/*.wss.yaml`; o gerador de laboratório fornece
+política e credenciais reais para dois serviços.
+
+| Campo adicional | Regra |
+|---|---|
+| `http.bind_host` | IP literal; bind público exige configuração explícita |
+| `http.port` | 1–65535, diferente da porta WSS |
+| `http.security` | Certificado/chave de servidor; sem CA de clientes ou opções de desabilitar TLS |
+| `http.max_connections` | 1–256; inclui TLS, leitura, espera e resposta |
+| `http.max_in_flight` | 1–64 pendências de origem no Gateway |
+| `http.requests_per_second` | 1–10000, token bucket global com burst inicial igual ao valor |
+| `http.request_timeout_ms` | 100–60000, prazo por fase: leitura, origem e escrita |
+| `agent.max_in_flight` | Opcional, 1–64; padrão 16 conexões HTTP locais |
+| `agent.backend_timeout_ms` | Opcional, 100–60000; padrão 3000, total para conexão/escrita/leitura local |
+
+Corpos têm teto fixo de 1 MiB, headers 16 KiB/64 campos e target 8192 B.
+Preferir prazo da origem menor que o do Gateway. Timeout envia CANCEL, mas
+não desfaz efeitos da aplicação; nenhuma requisição é repetida após reconexão.
+
+As seções abaixo descrevem os schemas herdados; a publicação antes planejada
+para M3 agora está implementada com os limites acima.
+
 ## Diagnóstico M1
 
 Exemplos: `config/agent.local.yaml` e `config/gateway.local.yaml`. Um documento

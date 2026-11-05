@@ -138,7 +138,14 @@ bool AgentProxy::message(const wire::Frame& frame) {
     if (request.id <= last_id_) return false;
     last_id_ = request.id;
     const auto service = std::find_if(config_.services.begin(), config_.services.end(), [&](const auto& value) { return value.name == request.service; });
-    const auto reply = [&](unsigned status) { return send_({wire::Type::response, px::encode_response(px::error_response(request.id, status))}); };
+    const auto reply = [&](unsigned status) {
+        auto response = px::error_response(request.id, status);
+        if (request.method == "HEAD") {
+            response.fields.emplace_back("content-length", std::to_string(response.body.size()));
+            response.body.clear();
+        }
+        return send_({wire::Type::response, px::encode_response(response)});
+    };
     if (service == config_.services.end()) return reply(404);
     if (px::hostname(px::single_field(request.fields, "host")) != service->hostname) return reply(403);
     if (requests_.size() >= config_.max_in_flight) return reply(503);

@@ -1,4 +1,4 @@
-name: C++ secure tunnel
+name: C++ reverse proxy
 on: [push, pull_request, workflow_dispatch]
 permissions:
   contents: read

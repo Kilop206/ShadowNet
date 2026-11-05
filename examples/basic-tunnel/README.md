@@ -1,4 +1,25 @@
-# Túnel seguro do Milestone 2
+# Proxy reverso do Milestone 3
+
+Gerar configurações frescas e iniciar quatro processos em terminais separados:
+
+```sh
+python scripts/dev-certificates.py --output build/dev-pki-m3
+python examples/simple-api/server.py
+python examples/website/server.py
+./build/bootstrap/bin/shadow-gateway --config build/dev-pki-m3/gateway.wss.yaml
+./build/bootstrap/bin/shadow-agent --config build/dev-pki-m3/agent.wss.yaml
+```
+
+Em outro terminal, testar os dois hostnames por HTTPS, sem editar DNS:
+
+```sh
+python scripts/check-demo.py --ca-file build/dev-pki-m3/ca.crt
+```
+
+No Windows, usar `.exe` e o diretório de build escolhido. O protocolo é v3;
+atualizar ambos os binários. A PKI é descartável e não serve para produção.
+
+## Diagnóstico de conectividade herdado do M2
 
 Na raiz, após compilar e instalar OpenSSL 3.0+:
 
@@ -13,7 +34,8 @@ Observar `tunnel_established` e `heartbeat_confirmed`. Reiniciar o Gateway
 demonstra reconexão; cada conexão recebe sessão nova. No Windows, acrescentar
 `.exe` e utilizar `build/mingw/bin` quando esse for o diretório de build.
 As credenciais de laboratório ficam em `build/` e não devem ir para produção.
-Esse túnel ainda não publica serviços: o proxy HTTP entra no M3.
+No M3, os arquivos gerados também publicam API/website; iniciar os dois serviços
+locais e utilizar o verificador acima para comprovar o encaminhamento.
 
 ## Diagnóstico local preservado do Milestone 1
 
@@ -32,5 +54,4 @@ Em outro terminal:
 No Windows, acrescentar `.exe` e usar o caminho do diretório de build escolhido.
 O Agent registra `hello_acknowledged` e retorna 0; o Gateway continua atendendo.
 Esse fluxo demonstra comunicação TCP local e não publica os serviços. A API
-`python examples/simple-api/server.py` é uma fixture para M3; ainda não é
-alcançável por meio do Agent/Gateway.
+O transporte `local_tcp` não encaminha HTTP. Usar WSS v3 para publicação.

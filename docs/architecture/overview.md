@@ -1,5 +1,46 @@
 # Arquitetura
 
+## Proxy reverso M3
+
+O Gateway tem listeners separados para HTTPS público e WSS/mTLS de agentes.
+`HttpsServer` limita e processa conexões TLS/HTTP; `GatewayProxy` autoriza
+registros e mantém rotas e pendências por ID/sessão. `SecureSession` transporta
+envelopes v3. No Agent, `AgentProxy` aplica a allowlist e limita instâncias de
+`LocalHttp`, cada uma conectada a um endpoint fixo de loopback.
+
+```mermaid
+sequenceDiagram
+    participant C as Cliente HTTPS
+    participant G as Gateway
+    participant A as Agent privado
+    participant S as Serviço local
+    A->>G: WSS v3 com TLS 1.3/mTLS
+    A->>G: REGISTER com nomes e hostnames
+    G->>G: Autorizar política da identidade e publicar atomicamente
+    G-->>A: REGISTERED
+    C->>G: HTTP/1.1, Host autorizado
+    G->>G: Validar framing, limpar headers, reservar ID e prazo
+    G->>A: REQUEST com ID e nome de serviço
+    A->>A: Conferir allowlist, Host e limite em voo
+    A->>S: HTTP/1.1 para IP/porta configurados
+    S-->>A: Resposta completa limitada
+    A-->>G: RESPONSE com mesmo ID
+    G->>G: Conferir sessão responsável e remover pendência
+    G-->>C: Status, headers e corpo HTTPS
+```
+
+Respostas podem chegar fora de ordem. Só o ID na sessão responsável resolve a
+pendência; pedidos de outros agentes permanecem isolados. Perda do túnel remove
+rotas e resolve seus pedidos com 503. Timeout envia CANCEL e retorna 504;
+respostas antigas são descartadas. Não há replay automático de HTTP.
+
+O MVP usa mensagens completas com até 1 MiB de corpo e conexões públicas de
+um request/response. Há simultaneidade entre conexões, sem streaming ou
+keep-alive/pipelining público. Tetos cobrem conexões, pendências, frames,
+filas, headers e prazos. O M4 refinará orçamento global e backpressure.
+As seções de M1/M2 abaixo preservam as decisões anteriores; o fluxo de proxy
+nelas planejado já funciona dentro dos limites do M3.
+
 ## Túnel seguro M2
 
 O módulo `security` provisiona contextos OpenSSL com TLS 1.3, mTLS, verificação
@@ -82,7 +123,7 @@ ao operador. O build de produção futuro precisará de inventário/SBOM, polít
 de atualização e revisão de avisos de segurança. `core` permanece pequeno,
 sem uma hierarquia genérica de sockets ou plugins sem consumidores concretos.
 
-## Arquitetura alvo (ainda não implementada)
+## Fluxo do proxy implementado no M3
 
 ```mermaid
 flowchart LR
@@ -110,7 +151,7 @@ sequenceDiagram
     G-->>C: Resposta HTTPS
 ```
 
-No M3, começar com mensagens HTTP completas limitadas e tabela de correlação
-por sessão. Limitar requisições em voo antes de otimizar multiplexação.
+O M3 utiliza mensagens HTTP completas limitadas e tabela de correlação por
+sessão, com teto de requisições em voo antes de otimizar multiplexação.
 Buffers sem limite, destinos fornecidos pelo cliente e confiança irrestrita em
 `Host`, `Forwarded` ou `X-Forwarded-*` não são aceitáveis.

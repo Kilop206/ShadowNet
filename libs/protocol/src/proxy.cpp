@@ -134,6 +134,15 @@ Fields sanitize(const Fields& input, bool preserve_content_length) {
     Fields normalized;
     for (const auto& [key, value] : input) normalized.emplace_back(lower(key), value);
     validate_fields(normalized);
+    for (const auto& [key, value] : normalized) if (key == "transfer-encoding") {
+        (void)value;
+        const auto coding = single_field(normalized, "transfer-encoding");
+        std::string_view trimmed(coding);
+        while (!trimmed.empty() && (trimmed.front() == ' ' || trimmed.front() == '\t')) trimmed.remove_prefix(1);
+        while (!trimmed.empty() && (trimmed.back() == ' ' || trimmed.back() == '\t')) trimmed.remove_suffix(1);
+        // Beast removes chunk framing, but does not decode arbitrary transfer codings.
+        require(lower(trimmed) == "chunked");
+    }
     std::set<std::string> removed{"connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "proxy-connection",
         "te", "trailer", "transfer-encoding", "upgrade"};
     if (!preserve_content_length) removed.insert("content-length");

@@ -1,8 +1,10 @@
 # Limitações conhecidas
 
-- O M2 estabelece WSS/TLS 1.3/mTLS, mas ainda não oferece proxy HTTP ou publicação.
+- O M3 publica HTTP/1.1 via HTTPS e WSS/TLS 1.3/mTLS, com mensagens completas limitadas a 1 MiB de corpo.
 - O diagnóstico `local_tcp` do M1 é separado e restrito a loopback; encerra após handshake.
-- Serviços são validados, mas não registrados remotamente ou acessados (M3).
+- Sem streaming/SSE, WebSocket de aplicações, CONNECT/TRACE, HTTP/2 ou TCP genérico.
+- Uma requisição/resposta por conexão pública; sem keep-alive/pipelining público.
+- O protocolo WSS é v3, incompatível com M2/v2; atualizar ambos os binários juntos.
 - Não há status persistido, comando stop, dashboard, Prometheus ou serviço de sistema.
 - Um único event loop por processo; não foi feito benchmark de throughput de proxy.
 - Limites iniciais não são proteção completa contra DoS; logs não têm rate limit
@@ -15,7 +17,10 @@
 - Chaves Unix exigem 0600/0400; ACL Windows é responsabilidade do administrador, sem inspeção automática.
 - Sem prompt para PEM criptografado. A CA privada deve permanecer fora dos hosts do túnel.
 - Uma identidade aceita uma sessão; múltiplas instâncias da mesma identidade não fazem balanceamento.
-- Sem HTTP E2E, validação física de NAT/CGNAT ou carga de produção.
+- Há E2E HTTPS real com dois serviços e concorrência. Não houve validação física de NAT/CGNAT ou carga de produção.
+- Rate limit é global, sem política por cliente ou tenant. Streaming/backpressure e orçamento global refinado são M4.
+- CANCEL fecha I/O local, mas não desfaz efeitos da aplicação. Requisições nunca são repetidas após reconexão.
+- Headers/redirects/conteúdo da aplicação podem revelar IPs; o proxy não reescreve URLs arbitrariamente.
 - Resultados efetivamente executados estão nos relatórios de cada milestone;
   configurar CI/Compose não prova aprovação de execuções futuras.
 

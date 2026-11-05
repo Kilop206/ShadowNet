@@ -73,6 +73,12 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(b"HTTP/1.0 200 OK\r\nContent-Type: application/octet-stream\r\n\r\nbody\x00until-eof")
             self.close_connection = True
             return
+        if path == "/transfer-gzip":
+            encoded = gzip.compress(b"transfer-coded", mtime=0)
+            self.wfile.write(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: gzip, chunked\r\n\r\n" +
+                             f"{len(encoded):x}\r\n".encode() + encoded + b"\r\n0\r\n\r\n")
+            self.close_connection = True
+            return
         status, reason = (201, "Created Here") if path == "/cookies" else (200, "OK")
         if path.startswith("/status/"):
             status = int(path.rsplit("/", 1)[1])

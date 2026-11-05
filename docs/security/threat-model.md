@@ -1,5 +1,28 @@
 # Modelo de ameaças inicial
 
+## Fronteiras adicionais do M3
+
+Visitantes usam HTTPS sem certificado cliente; a porta de controle WSS mantém
+mTLS. O Gateway vincula serviço/hostname ao fingerprint e exige registro
+atômico. O Agent confere novamente serviço/Host e abre somente o endpoint de
+loopback do YAML. Não há destino de rede selecionado pelo cliente, CONNECT,
+TRACE, absolute-form ou upgrade de aplicações; não é proxy aberto.
+
+Beast interpreta framing com limites e rejeita mensagens ambíguas. Campos
+hop-by-hop, inclusive os nomeados por Connection, são removidos, Content-Length
+é reconstruído e HEAD/204/304 respeitam ausência de corpo. Forwarded e
+X-Forwarded recebidos do visitante não são confiados. Via pseudônimo permite
+detectar loops simples de encaminhamento.
+
+IDs não são reutilizados; outra sessão não pode responder a uma pendência.
+CANCEL libera recursos, mas não faz rollback na aplicação. POST não é repetido
+após reconexão. Corpos, headers, conexões, pendências, filas, prazos e RPS têm
+limites; isso não substitui defesa de rede contra DDoS ou refinamentos do M4.
+
+Aplicações ainda podem revelar endereços em conteúdo, redirects e headers
+próprios. O proxy não reescreve payloads/URLs arbitrariamente. O Gateway conhece
+o IP do Agent; LAN, ISP e operadores continuam podendo observar tráfego.
+
 ## Controles adicionais implementados no M2
 
 O túnel WSS exige TLS 1.3/mTLS, validação X.509 estrita e autorização de leaf

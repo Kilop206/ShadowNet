@@ -87,6 +87,10 @@ TEST_CASE("HTTP sanitization removes named connection fields and untrusted proxy
     CHECK(px::single_field(result, "cookie") == "session=test");
     CHECK_THROWS_AS(px::sanitize({{"connection", "Host"}, {"host", "api.test"}}), shadow::Error);
     CHECK_THROWS_AS(px::sanitize({{"connection", "Content-Length"}}), shadow::Error);
+    CHECK_THROWS_AS(px::sanitize({{"transfer-encoding", "gzip, chunked"}}), shadow::Error);
+    CHECK_THROWS_AS(px::sanitize({{"transfer-encoding", ""}}), shadow::Error);
+    CHECK_THROWS_AS(px::sanitize({{"transfer-encoding", "chunked"}, {"transfer-encoding", "chunked"}}), shadow::Error);
+    CHECK_NOTHROW(px::sanitize({{"transfer-encoding", " ChUnKeD\t"}}));
     CHECK(px::sanitize({{"content-length", "5"}}, true).size() == 1);
     CHECK_THROWS_AS(px::encode_response({1, 101, "Switching Protocols", {}, ""}), shadow::Error);
     CHECK_THROWS_AS(px::encode_response({1, 200, "OK\r\nInjected", {}, ""}), shadow::Error);

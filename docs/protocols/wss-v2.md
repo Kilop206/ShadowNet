@@ -1,5 +1,9 @@
 # Túnel WSS v2 — M2
 
+Documento histórico do M2. O runtime atual usa [v3](proxy-v3.md) e exige
+atualizar Agent e Gateway juntos; o gerador atual também cria configurações
+de publicação M3. Os limites de frames/fila e tipos adicionais estão no v3.
+
 Transporte: TCP → TLS 1.3 com mTLS → WebSocket HTTP/1.1, somente no caminho
 `/shadow/tunnel/v2`, com subprotocolo obrigatório `shadownet.v2`.
 O Gateway rejeita `Origin` de navegador e não oferece outra rota HTTP pública.

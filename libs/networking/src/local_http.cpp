@@ -68,7 +68,15 @@ private:
             } catch (const Error&) { self->fail(502); }
         });
     }
-    void fail(unsigned status) { if (!closed_) complete(px::error_response(id_, status)); }
+    void fail(unsigned status) {
+        if (closed_) return;
+        auto response = px::error_response(id_, status);
+        if (head_) {
+            response.fields.emplace_back("content-length", std::to_string(response.body.size()));
+            response.body.clear();
+        }
+        complete(std::move(response));
+    }
     void complete(px::Response response) {
         if (closed_) return;
         close();

@@ -84,6 +84,8 @@ resolve suas requisições em voo com 503; outros agentes permanecem isolados.
   que o Host da requisição corresponde ao serviço. Não resolve destinos do cliente.
 - Beast interpreta framing HTTP; TE+CL e mensagens malformadas são rejeitados.
   Chunked e EOF de origem são decodificados; Content-Length é reconstruído.
+  Transfer-Encoding adicional, como `gzip, chunked`, é rejeitado (400 na
+  entrada, 502 na origem). Content-Encoding, inclusive gzip, é preservado.
 - Headers hop-by-hop, inclusive os nomeados por Connection, são removidos nos
   dois sentidos. Content-Length só é preservado como metadado em HEAD/304.
   Set-Cookie e demais campos end-to-end repetidos são preservados.

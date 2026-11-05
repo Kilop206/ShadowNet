@@ -6,7 +6,7 @@ cmake --build --preset bootstrap --parallel 4
 ctest --preset bootstrap
 ```
 
-`unit.foundation` executa Catch2 com casos de framing v1/v2, versões e tipos
+`unit.foundation` executa Catch2 com casos de framing v1/v3, versões e tipos
 inválidos, limites de tamanho, identificadores, hostnames, YAML inválido,
 campos desconhecidos/duplicados, allowlist e logging sem injeção de linhas.
 
@@ -37,7 +37,7 @@ cmake --build --preset bootstrap --parallel 4
 ```
 
 No Windows, o LLVM separado pode não descobrir os includes do MinGW. Para
-analisar as treze unidades de produção com a toolchain local:
+analisar as dezessete unidades de produção com a toolchain local:
 
 ```powershell
 ./scripts/check-static.ps1 -BuildDir build/mingw -MingwRoot C:/mingw64
@@ -66,9 +66,28 @@ malformada e permissões Unix. Um peer confirma fechamento WebSocket e TLS
 As fixtures nunca são versionadas e não alteram a confiança do sistema.
 Esse teste não depende de bibliotecas Python externas nem de APIs comerciais.
 
+## HTTP E2E do M3
+
+`e2e.reverse_proxy` executa os binários reais e duas origens HTTP identificáveis.
+Valida HTTPS → Gateway → WSS/mTLS → Agent → origem → cliente, com certificados
+verificados. A suíte cobre métodos, target/query, headers, cookies repetidos,
+corpos binários/gzip de até 1 MiB, HEAD, 204/304, chunked/EOF, 100-continue,
+OPTIONS/Max-Forwards e respostas fora de ordem em 16 requisições concorrentes.
+
+Peers independentes também tentam registrar hostname não autorizado, responder
+pela sessão de outro agente, reutilizar resposta atrasada e escolher destinos
+internos arbitrários. Há testes de framing ambíguo, limites de corpo/headers,
+timeouts, CANCEL, perda do túnel, recadastro após reconexão, rate limit e slots.
+As fixtures ficam no build, não instalam CA no sistema e limpam seus processos.
+
+O Compose tem Gateway, Agent, API e website. Depois de iniciar as quatro
+aplicações, `python scripts/check-demo.py --ca-file build/dev-pki-m3/ca.crt`
+verifica os dois serviços por HTTPS com SAN/SNI reais, sem alterar DNS ou
+desabilitar certificados. Isso comprova proxy entre contêineres; não comprova
+NAT/CGNAT em redes físicas diferentes nem é benchmark de produção.
+
 ## Ainda não coberto
 
-HTTP, métodos, cabeçalhos, corpos, roteamento
-e isolamento de serviços em requisições: M3. Interrupções em carga de proxy e
-backpressure HTTP: M4. Não existe teste HTTP E2E aprovado nesta versão; o Compose
-valida WSS/mTLS entre contêineres e mantém uma API preparatória para o M3.
+Ensaios sustentados de carga, orçamentos globais refinados e backpressure HTTP
+são M4. Revogação, rotação automática e auditoria externa são M5. Resultados
+realmente executados constam em `docs/milestones/m3.md`.

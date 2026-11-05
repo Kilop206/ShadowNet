@@ -1,6 +1,6 @@
 # Instalação e build
 
-Não há release binária ou instalador de serviço de sistema até o M2.
+Não há release binária ou instalador de serviço de sistema até o M3.
 
 ## Linux
 
@@ -56,29 +56,35 @@ com CMake 3.5 declarada pelo yaml-cpp 0.9.0, sem modificar seu código.
 
 ## Contêineres
 
-Gerar a PKI de laboratório fora da imagem:
+Gerar uma PKI nova fora da imagem. Definir `SHADOW_PKI_DIR` como
+`../build/dev-pki-m3`: no Bash, `export SHADOW_PKI_DIR=../build/dev-pki-m3`;
+no PowerShell, `$env:SHADOW_PKI_DIR='../build/dev-pki-m3'`.
 
 ```sh
-python scripts/dev-certificates.py
-docker compose -p shadownet-m2 -f docker/compose.yaml up --build -d
-docker compose -p shadownet-m2 -f docker/compose.yaml logs agent gateway
-docker compose -p shadownet-m2 -f docker/compose.yaml restart gateway
-docker compose -p shadownet-m2 -f docker/compose.yaml down
+python scripts/dev-certificates.py --output build/dev-pki-m3
+docker compose -p shadownet-m3 -f docker/compose.yaml up --build -d
+python scripts/check-demo.py --ca-file build/dev-pki-m3/ca.crt
+docker compose -p shadownet-m3 -f docker/compose.yaml restart gateway
+python scripts/check-demo.py --ca-file build/dev-pki-m3/ca.crt
+docker compose -p shadownet-m3 -f docker/compose.yaml down
 ```
 
 No Linux, definir `SHADOW_UID`/`SHADOW_GID` como o proprietário dos arquivos
 (padrão 1000:1000), por exemplo exportando as saídas de `id -u`/`id -g`. Não
 relaxar as chaves para 0644. Gateway e Agent têm namespaces de rede diferentes;
 o Agent resolve o nome `gateway` e verifica seu SAN. Somente o Gateway publica
-7443 no loopback do host. A API compartilha o namespace do Agent para poder
-permanecer em `127.0.0.1:8080`; ainda não recebe tráfego pelo túnel.
+7443 (controle) e 8443 (HTTPS) no loopback do host. API e website compartilham
+o namespace do Agent, em `127.0.0.1:8080` e `127.0.0.1:3000`. Nenhuma porta
+de origem é publicada. O verificador acessa ambos pelo Gateway e valida SAN/SNI,
+sem mudar DNS ou confiar globalmente na CA descartável.
 
 Cada contêiner recebe apenas seu próprio certificado/chave e a CA pública.
 A chave leaf é copiada de um bind somente leitura para tmpfs privado com
 umask 077, porque Docker Desktop pode apresentar bind mounts Windows como 0777.
 A checagem de permissões do runtime permanece ativa. A chave privada da CA
 não é montada em nenhum contêiner. Não há healthcheck que finja validar HTTP;
-`tunnel_established`/`heartbeat_confirmed` comprovam a sessão WSS.
+`tunnel_established`/`heartbeat_confirmed` comprovam a sessão WSS, e
+`services_registered` o cadastro. `check-demo.py` comprova tráfego HTTP real.
 
 Esse laboratório não prova NAT/CGNAT em redes físicas distintas e não é um
 deploy de produção. A CA descartável não deve ser reutilizada em VPS pública.

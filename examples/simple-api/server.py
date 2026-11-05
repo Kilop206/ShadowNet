@@ -1,4 +1,4 @@
-"""Loopback HTTP fixture for the future M3 end-to-end test; no dependencies."""
+"""Loopback HTTP API for the reverse-proxy demonstration; no dependencies."""
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import signal
@@ -29,6 +29,7 @@ class API(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("X-Service", "api")
         self.send_header("Connection", "close")
         self.end_headers()
         self.wfile.write(body)

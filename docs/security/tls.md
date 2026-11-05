@@ -1,5 +1,14 @@
 # Certificados TLS — M2 implementado
 
+No M3 há contextos separados: WSS v3 mantém mTLS; HTTPS público usa certificado
+de servidor e não exige certificado cliente. Ambos requerem TLS 1.3. O leaf
+público deve cobrir em SAN cada hostname publicado. Ele pode ser independente
+da CA de agentes; compartilhar o leaf de laboratório é apenas conveniência.
+
+As configurações geradas agora publicam API e website via v3. Usar novo
+`--output` para preservar uma PKI anterior e atualizar ambos os binários.
+O Compose aceita `SHADOW_PKI_DIR` para escolher outra geração.
+
 WSS exige OpenSSL 3.0+, TLS 1.3 como mínimo e máximo e mTLS obrigatório.
 O diagnóstico `local_tcp` continua rejeitando campos de credenciais e destinos
 externos; não há fallback automático de WSS para esse transporte.

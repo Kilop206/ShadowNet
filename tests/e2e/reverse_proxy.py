@@ -247,6 +247,25 @@ class ReverseProxy(unittest.TestCase):
         self.assertEqual(result[0], 404)
         self.assertEqual(result[3], b"")
 
+    def test_head_errors_do_not_disconnect_other_services_or_pending_requests(self):
+        self.start(agent={"timeout": 400, "maximum": 1})
+        result = self.call("HEAD", "/fixed?delay=1000")
+        self.assertEqual(result[0], 504)
+        self.assertEqual(result[3], b"")
+        self.assertEqual(self.call(target="/fixed", host="app.example.test")[3], b"hello-website")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            before = self.api.count()
+            pending = pool.submit(self.call, target="/fixed?delay=200")
+            deadline = time.monotonic() + 3
+            while self.api.count() == before and time.monotonic() < deadline:
+                time.sleep(0.005)
+            result = self.call("HEAD", "/fixed")
+            self.assertEqual(result[0], 503)
+            self.assertEqual(result[3], b"")
+            self.assertEqual(pending.result()[0], 200)
+        self.assertIsNone(self.ag.process.poll())
+        self.assertEqual(self.ag.log().count("services_registered"), 1)
+
     def test_chunked_request_and_response_are_reframed_without_hop_headers(self):
         self.start()
         result = self.call("POST", "/echo", iter([b"abc", b"\0xyz"]), chunked=True)
@@ -335,7 +354,7 @@ class ReverseProxy(unittest.TestCase):
         self.assertEqual(self.raw(prefix + b"Content-Length: 1048577\r\n\r\n")[0], 413)
         self.assertEqual(self.raw(prefix + b"Transfer-Encoding: chunked\r\n\r\n100001\r\n")[0], 413)
         self.assertEqual(self.raw(b"GET / HTTP/1.1\r\nHost: api.example.test\r\nX-Huge: " + b"x" * 17000 + b"\r\n\r\n")[0], 431)
-        for path in ("/malformed", "/ambiguous", "/oversize", "/huge-header"):
+        for path in ("/malformed", "/ambiguous", "/oversize", "/huge-header", "/transfer-gzip"):
             self.assertEqual(self.call(target=path)[0], 502, path)
         body = bytes(range(256)) * 4096
         result = self.call("POST", "/binary", body)
@@ -348,6 +367,7 @@ class ReverseProxy(unittest.TestCase):
                  b"POST / HTTP/1.1\r\nHost: api.example.test\r\nContent-Length: 1\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n",
                  b"POST / HTTP/1.1\r\nHost: api.example.test\r\nContent-Length: 1\r\nContent-Length: 2\r\n\r\na",
                  b"GET / HTTP/1.1\r\nHost: api.example.test\r\nConnection: Host\r\n\r\n",
+                 b"POST /binary HTTP/1.1\r\nHost: api.example.test\r\nTransfer-Encoding: gzip, chunked\r\n\r\n3\r\nabc\r\n0\r\n\r\n",
                  b"GET / HTTP/1.1\r\nHost: api.example.test\r\nInvalid Header: value\r\n\r\n"]
         before = self.api.count()
         for request in cases:
