@@ -1,4 +1,4 @@
-name: C++ foundation
+name: C++ secure tunnel
 on: [push, pull_request, workflow_dispatch]
 permissions:
   contents: read
@@ -20,7 +20,7 @@ jobs:
             tidy: 'OFF'
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y ninja-build clang clang-tidy
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build clang clang-tidy libssl-dev openssl
       - name: Configure
         run: >-
           cmake --preset bootstrap -DCMAKE_CXX_COMPILER=${{ matrix.compiler }}
@@ -48,6 +48,7 @@ jobs:
             mingw-w64-ucrt-x86_64-cmake
             mingw-w64-ucrt-x86_64-ninja
             mingw-w64-ucrt-x86_64-python
+            mingw-w64-ucrt-x86_64-openssl
       - run: cmake --preset bootstrap
       - run: cmake --build --preset bootstrap --parallel 2
       - run: ctest --preset bootstrap
