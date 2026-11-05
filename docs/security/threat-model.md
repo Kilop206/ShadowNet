@@ -1,5 +1,19 @@
 # Modelo de ameaças inicial
 
+## Disponibilidade no M4
+
+Além de limites de conexão/corpo/headers, há admissão global por reservas RAII,
+fila FIFO pública antes de ler corpos e teto global para sessões WSS incluindo
+handshakes. Agent retém respostas apenas dentro de slots/orçamento, drena a
+fila ao recuperar capacidade e aplica prazo de escrita. Controle tem capacidade
+reservada, e um peer que acumule mais de 128 trabalhos/rejeições é desconectado.
+Esses controles são exercitados com recebedores lentos e interrupção de processos.
+
+São limites de disponibilidade, sem promessa de proteção total contra DoS ou
+de teto exato de RSS. Custos de TLS, kernel, allocators e logs precisam de
+dimensionamento operacional. Revogação/ciclo de certificados e auditoria
+aprofundada continuam no M5. Ver [confiabilidade](../architecture/reliability.md).
+
 ## Fronteiras adicionais do M3
 
 Visitantes usam HTTPS sem certificado cliente; a porta de controle WSS mantém

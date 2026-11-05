@@ -1,6 +1,6 @@
 # Instalação e build
 
-Não há release binária ou instalador de serviço de sistema até o M3.
+Não há release binária ou instalador de serviço de sistema até o M4.
 
 ## Linux
 

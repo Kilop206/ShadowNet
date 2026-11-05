@@ -107,5 +107,7 @@ Não se incluem endereços internos, payloads ou credenciais nos erros.
 
 O limite de conexões inclui TLS e clientes ociosos. Há um prazo para
 TLS/leitura, outro para a ida à origem e outro para escrita, além do teto de
-1 s para encerramento TLS. Rate limiting usa token bucket global. O M4 tratará
-orçamentos globais mais refinados, streaming/backpressure e ensaios de carga.
+1 s para encerramento TLS. Rate limiting usa token bucket global. O M4 mantém
+o formato v3 e implementa [admissão e backpressure](../architecture/reliability.md)
+sem streaming. Mensagens de controle têm capacidade reservada; CANCEL segue
+a ordem dos REQUESTs para não ultrapassar a requisição que pretende cancelar.

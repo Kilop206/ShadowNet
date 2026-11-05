@@ -1,5 +1,12 @@
 # Arquitetura
 
+## Confiabilidade M4
+
+O formato de mensagens continua v3. [Controle de recursos](reliability.md)
+descreve reservas RAII globais, FIFO antes dos corpos públicos, fila WSS com
+capacidade de controle reservada, respostas adiadas no Agent e deadlines de
+escrita. Há testes adversariais e carga com dois reinícios do Gateway.
+
 ## Proxy reverso M3
 
 O Gateway tem listeners separados para HTTPS público e WSS/mTLS de agentes.
@@ -37,7 +44,7 @@ respostas antigas são descartadas. Não há replay automático de HTTP.
 O MVP usa mensagens completas com até 1 MiB de corpo e conexões públicas de
 um request/response. Há simultaneidade entre conexões, sem streaming ou
 keep-alive/pipelining público. Tetos cobrem conexões, pendências, frames,
-filas, headers e prazos. O M4 refinará orçamento global e backpressure.
+filas, headers e prazos. O M4 adiciona orçamento global e backpressure.
 As seções de M1/M2 abaixo preservam as decisões anteriores; o fluxo de proxy
 nelas planejado já funciona dentro dos limites do M3.
 

@@ -18,7 +18,12 @@
 - Sem prompt para PEM criptografado. A CA privada deve permanecer fora dos hosts do túnel.
 - Uma identidade aceita uma sessão; múltiplas instâncias da mesma identidade não fazem balanceamento.
 - Há E2E HTTPS real com dois serviços e concorrência. Não houve validação física de NAT/CGNAT ou carga de produção.
-- Rate limit é global, sem política por cliente ou tenant. Streaming/backpressure e orçamento global refinado são M4.
+- Rate limit é global, sem política por cliente ou tenant. O M4 aplica admissão
+  por orçamento e backpressure para mensagens completas; streaming continua ausente.
+- Reservas de buffers são conservadoras e têm granularidade de mensagem máxima,
+  inclusive para GETs pequenos. Não são um teto de RSS: TLS, allocators, buffers
+  do kernel, headers pré-admissão e estruturas fixas têm custos adicionais.
+  Dimensionamento e limites do SO continuam necessários.
 - CANCEL fecha I/O local, mas não desfaz efeitos da aplicação. Requisições nunca são repetidas após reconexão.
 - Headers/redirects/conteúdo da aplicação podem revelar IPs; o proxy não reescreve URLs arbitrariamente.
 - Resultados efetivamente executados estão nos relatórios de cada milestone;

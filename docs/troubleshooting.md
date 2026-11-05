@@ -1,5 +1,20 @@
 # Troubleshooting
 
+## Recursos do M4
+
+| Evento/sintoma | Interpretação e ação |
+|---|---|
+| `http_buffer_wait` | Corpo aguardando reserva FIFO; verificar clientes lentos, deadlines, limite de conexões e `http.buffer_budget_bytes` |
+| `response_backpressure id=...` / `response_resumed` | Resposta adiada e retomada após a fila WSS drenar; verificar velocidade e saúde do túnel |
+| `response_cancelled id=...` | CANCEL removeu uma resposta ainda adiada; não desfaz efeitos na aplicação |
+| `tunnel_buffer_limit` | Orçamento global WSS esgotado; conexão foi recusada antes de TLS; cada sessão reserva 8650848 bytes |
+| `tunnel_write_timeout` | Peer não consumiu a mensagem dentro de `write_timeout_ms`; revisar rede e prazos nos dois lados |
+| 503 sob carga | Slots, orçamento local do Agent ou fila de envio esgotados; verificar as três causas antes de aumentar limites |
+
+Os detalhes de dimensionamento estão em [confiabilidade](architecture/reliability.md).
+Espera por reserva já consome o prazo de leitura; em timeout a conexão pode
+fechar sem resposta HTTP. Não desabilitar deadlines para mascarar saturação.
+
 ## Proxy HTTPS M3
 
 | Sintoma/status | Verificação |

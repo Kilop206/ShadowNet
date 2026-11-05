@@ -20,7 +20,8 @@ sessão em POSIX. Esse caso é explicitamente ignorado no Windows, pois
 Para ver cada cenário e contagens: `ctest --test-dir build/mingw -V`.
 Os testes não exigem rede externa nem portas fixas; selecionam portas efêmeras
 disponíveis e limpam processos e arquivos temporários. As fixtures de integração
-ficam no diretório de build e herdam suas permissões, sem conter segredos.
+ficam no diretório de build e herdam suas permissões; usam somente credenciais
+descartáveis, sem reutilizar segredos reais.
 A seleção seguida de bind
 tem uma pequena janela de corrida; em caso de conflito o teste falha explicitamente.
 
@@ -86,8 +87,30 @@ verifica os dois serviços por HTTPS com SAN/SNI reais, sem alterar DNS ou
 desabilitar certificados. Isso comprova proxy entre contêineres; não comprova
 NAT/CGNAT em redes físicas diferentes nem é benchmark de produção.
 
-## Ainda não coberto
+## Confiabilidade e carga do M4
 
-Ensaios sustentados de carga, orçamentos globais refinados e backpressure HTTP
-são M4. Revogação, rotação automática e auditoria externa são M5. Resultados
-realmente executados constam em `docs/milestones/m3.md`.
+`e2e.reliability` esgota os orçamentos HTTP/Agent/túnel e testa FIFO antes de
+100-continue, uploads abandonados, clientes públicos lentos, recebedor WSS
+lento, cancelamento de resposta adiada, retomada e deadline de escrita.
+O peer independente reconstitui fragmentação WebSocket e verifica IDs/corpos.
+
+O ensaio padrão dura 5 s com 12 workers, dois serviços e duas mortes/reinícios
+do Gateway durante POSTs. Falhas transitórias são aceitas apenas quando a
+requisição atravessa uma janela de falha. Respostas corrompidas, TLS sem
+identidade válida e POST duplicado na origem sempre falham. O JSON fica em
+`build/<preset>/tests/reliability-load.json`; não contém corpos ou credenciais.
+
+Para um ensaio maior no Windows:
+
+```powershell
+$env:SHADOW_LOAD_SECONDS='30'
+$env:SHADOW_LOAD_WORKERS='16'
+ctest --test-dir build/mingw -R e2e.reliability -V
+Remove-Item Env:SHADOW_LOAD_SECONDS, Env:SHADOW_LOAD_WORKERS
+```
+
+No Linux: `SHADOW_LOAD_SECONDS=30 SHADOW_LOAD_WORKERS=16 ctest --preset bootstrap -R e2e.reliability -V`.
+O teste aceita 4–300 s e 4–32 workers. O deadline CTest é 420 s.
+Esses números medem somente o host de teste, sem promessa de capacidade de
+produção ou medição de WAN/NAT/CGNAT. Resultados executados: `milestones/m4.md`.
+Revogação, rotação automática e auditoria externa seguem no M5.

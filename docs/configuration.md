@@ -1,5 +1,21 @@
 # Configuração
 
+## Recursos opcionais do M4 (somente WSS)
+
+| Campo | Default | Intervalo |
+|---|---:|---:|
+| `agent.buffer_budget_bytes` | 67108864 (64 MiB) | 8 MiB–1 GiB |
+| `agent.write_timeout_ms` | 10000 | 100–60000 |
+| `gateway.tunnel_buffer_budget_bytes` | 134217728 (128 MiB) | 16 MiB–1 GiB |
+| `gateway.write_timeout_ms` | 10000 | 100–60000 |
+| `http.buffer_budget_bytes` | 67108864 (64 MiB) | 8 MiB–1 GiB |
+
+São inteiros decimais, validados offline; unidades como `64MB` não são aceitas.
+Configurações v3 do M3 continuam válidas com os defaults acima. Reservas,
+arredondamento por requisição, espera, deadlines e custos fora do orçamento
+estão descritos em [confiabilidade](architecture/reliability.md). Aumentar
+`max_connections` ou `max_in_flight` isoladamente não aumenta o orçamento.
+
 ## Proxy HTTPS do M3
 
 O protocolo do túnel é v3; atualizar Agent/Gateway juntos. O listener público
