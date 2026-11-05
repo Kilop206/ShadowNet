@@ -42,7 +42,7 @@ def exact(sock, size):
     return data
 
 
-def packet(kind=1, payload=b"home-server", version=2):
+def packet(kind=1, payload=b"home-server", version=3):
     return struct.pack("!4sBBHI", b"SHDW", version, kind, 0, len(payload)) + payload
 
 
@@ -193,7 +193,7 @@ class SecureTransport(unittest.TestCase):
             raise
 
     @contextmanager
-    def websocket(self, port, profile="agent", path="/shadow/tunnel/v2", protocol="shadownet.v2", origin=False):
+    def websocket(self, port, profile="agent", path="/shadow/tunnel/v3", protocol="shadownet.v3", origin=False):
         with self.tls(port, profile) as sock:
             self.assertEqual(sock.version(), "TLSv1.3")
             key = base64.b64encode(secrets.token_bytes(16)).decode()
@@ -206,14 +206,14 @@ class SecureTransport(unittest.TestCase):
             self.assertIn(b"101 Switching Protocols", response)
             expected = base64.b64encode(hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest())
             self.assertIn(expected, response)
-            self.assertIn(b"Sec-WebSocket-Protocol: shadownet.v2", response)
+            self.assertIn(b"Sec-WebSocket-Protocol: shadownet.v3", response)
             yield sock
 
     def hello(self, sock, name=b"home-server"):
         send_ws(sock, packet(payload=name))
         opcode, data = receive_ws(sock)
         self.assertEqual(opcode, 2)
-        self.assertEqual(data[:8], b"SHDW\x02\x02\x00\x00")
+        self.assertEqual(data[:8], b"SHDW\x03\x02\x00\x00")
         self.assertEqual(struct.unpack("!I", data[8:12])[0], len(data) - 12)
         nonce, interval, timeout = data[12:].decode().split(":")
         self.assertRegex(nonce, r"^[0-9a-f]{32}$")
@@ -417,7 +417,7 @@ class SecureTransport(unittest.TestCase):
                         key = re.search(r"Sec-WebSocket-Key: ([^\r]+)", request, re.IGNORECASE)[1]
                         accept = base64.b64encode(hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest()).decode()
                         peer.sendall(("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
-                                      f"Sec-WebSocket-Accept: {accept}\r\nSec-WebSocket-Protocol: shadownet.v2\r\n\r\n").encode())
+                                      f"Sec-WebSocket-Accept: {accept}\r\nSec-WebSocket-Protocol: shadownet.v3\r\n\r\n").encode())
                         receive_ws(peer)  # HELLO
                         if behavior == "no_welcome":
                             peer.recv(1)

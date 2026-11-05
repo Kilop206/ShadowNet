@@ -5,6 +5,7 @@
 #include <openssl/x509v3.h>
 #include <array>
 #include <span>
+#include <cstdint>
 
 namespace shadow::security {
 namespace {
@@ -16,10 +17,11 @@ std::string hex(std::span<const unsigned char> bytes) {
     return result;
 }
 void require(bool success) { if (!success) throw Error("TLS configuration failed"); }
-}
-std::shared_ptr<boost::asio::ssl::context> make_tls_context(const TlsFiles& files, bool server) {
+enum class Role : std::uint8_t { agent, gateway, https };
+std::shared_ptr<boost::asio::ssl::context> make_context(const TlsFiles& files, Role role) {
     try {
         namespace ssl = boost::asio::ssl;
+        const bool server = role != Role::agent;
         auto context = std::make_shared<ssl::context>(server ? ssl::context::tls_server : ssl::context::tls_client);
         auto* handle = context->native_handle();
         require(SSL_CTX_set_min_proto_version(handle, TLS1_3_VERSION) == 1);
@@ -31,7 +33,7 @@ std::shared_ptr<boost::asio::ssl::context> make_tls_context(const TlsFiles& file
         SSL_CTX_set_verify_depth(handle, 4);
         require(X509_VERIFY_PARAM_set_flags(SSL_CTX_get0_param(handle), X509_V_FLAG_X509_STRICT) == 1);
         context->set_password_callback([](std::size_t, ssl::context::password_purpose) { return std::string{}; });
-        context->load_verify_file(files.ca_file.string());
+        if (role != Role::https) context->load_verify_file(files.ca_file.string());
         context->use_certificate_chain_file(files.certificate_file.string());
         context->use_private_key_file(files.private_key_file.string(), ssl::context::pem);
         require(SSL_CTX_check_private_key(handle) == 1);
@@ -40,12 +42,20 @@ std::shared_ptr<boost::asio::ssl::context> make_tls_context(const TlsFiles& file
             X509_cmp_current_time(X509_get0_notAfter(certificate)) > 0);
         require(X509_check_purpose(certificate, server ? X509_PURPOSE_SSL_SERVER : X509_PURPOSE_SSL_CLIENT, 0) == 1);
         // OpenSSL/Asio define these positive verification bit flags as signed int.
-        context->set_verify_mode(server ? ssl::verify_peer | ssl::verify_fail_if_no_peer_cert : ssl::verify_peer); // NOLINT(bugprone-signed-bitwise)
+        if (role == Role::https) context->set_verify_mode(ssl::verify_none);
+        else context->set_verify_mode(server ? ssl::verify_peer | ssl::verify_fail_if_no_peer_cert : ssl::verify_peer); // NOLINT(bugprone-signed-bitwise)
         return context;
     } catch (const std::exception&) {
         // OpenSSL/Asio error text may contain paths or other sensitive context.
         throw Error("TLS credentials or context are invalid");
     }
+}
+} // namespace
+std::shared_ptr<boost::asio::ssl::context> make_tls_context(const TlsFiles& files, bool server) {
+    return make_context(files, server ? Role::gateway : Role::agent);
+}
+std::shared_ptr<boost::asio::ssl::context> make_https_context(const TlsFiles& files) {
+    return make_context(files, Role::https);
 }
 void verify_server_identity(SSL* stream, const std::string& host) {
     boost::system::error_code error;

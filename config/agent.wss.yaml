@@ -5,6 +5,8 @@ agent:
   gateway_host: gateway.example.com
   port: 7443
   timeout_ms: 5000
+  max_in_flight: 16
+  backend_timeout_ms: 3000
   reconnect:
     enabled: true
     initial_ms: 250
@@ -18,3 +20,7 @@ services:
     hostname: api.example.com
     local_host: 127.0.0.1
     local_port: 8080
+  - name: website
+    hostname: app.example.com
+    local_host: 127.0.0.1
+    local_port: 3000

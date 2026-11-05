@@ -76,9 +76,9 @@ bool ip_address(const std::string& value) {
     (void)boost::asio::ip::make_address(value, error);
     return !error;
 }
-security::TlsFiles tls_files(const YAML::Node& root, const std::filesystem::path& config_path) {
-    const auto node = root["security"];
-    keys(node, {"ca_file", "certificate_file", "private_key_file"});
+security::TlsFiles tls_files(const YAML::Node& node, const std::filesystem::path& config_path, bool mutual = true) {
+    if (mutual) keys(node, {"ca_file", "certificate_file", "private_key_file"});
+    else keys(node, {"certificate_file", "private_key_file"});
     const auto resolve = [&](const char* key) {
         auto path = std::filesystem::path(scalar(node, key));
         if (path.is_relative()) path = config_path.parent_path() / path;
@@ -90,7 +90,7 @@ security::TlsFiles tls_files(const YAML::Node& root, const std::filesystem::path
         if (!input) throw Error("TLS file is not readable");
         return path;
     };
-    security::TlsFiles result{resolve("ca_file"), resolve("certificate_file"), resolve("private_key_file")};
+    security::TlsFiles result{mutual ? resolve("ca_file") : std::filesystem::path{}, resolve("certificate_file"), resolve("private_key_file")};
 #ifndef _WIN32
     const auto permissions = std::filesystem::status(result.private_key_file).permissions();
     constexpr auto forbidden = std::filesystem::perms::group_all | std::filesystem::perms::others_all;
@@ -107,7 +107,7 @@ Agent load_agent(const std::filesystem::path& path) {
         else keys(root, {"transport", "agent", "services", "security"});
         const auto node = root["agent"];
         if (mode == Transport::local_tcp) keys(node, {"name", "gateway_host", "port", "timeout_ms"});
-        else keys(node, {"name", "gateway_host", "port", "timeout_ms", "reconnect"});
+        else keys(node, {"name", "gateway_host", "port", "timeout_ms", "reconnect", "max_in_flight", "backend_timeout_ms"});
         Agent result;
         result.name = scalar(node, "name");
         result.gateway_host = scalar(node, "gateway_host");
@@ -118,7 +118,9 @@ Agent load_agent(const std::filesystem::path& path) {
         if (mode == Transport::local_tcp) loopback(result.gateway_host);
         else {
             if (!ip_address(result.gateway_host) && !security::valid_hostname(result.gateway_host)) throw Error("invalid gateway hostname");
-            result.tls = tls_files(root, path);
+            result.tls = tls_files(root["security"], path);
+            if (node["max_in_flight"]) result.max_in_flight = number(node, "max_in_flight", {.min = 1, .max = 64});
+            if (node["backend_timeout_ms"]) result.backend_timeout = std::chrono::milliseconds(number(node, "backend_timeout_ms", {.min = 100, .max = 60000}));
             const auto reconnect = node["reconnect"];
             keys(reconnect, {"enabled", "initial_ms", "max_ms"});
             result.reconnect.enabled = boolean(reconnect, "enabled");
@@ -151,7 +153,7 @@ Gateway load_gateway(const std::filesystem::path& path) {
         const auto root = document(path);
         const auto mode = transport(root);
         if (mode == Transport::local_tcp) keys(root, {"transport", "gateway"});
-        else keys(root, {"transport", "gateway", "security", "authorized_agents"});
+        else keys(root, {"transport", "gateway", "security", "authorized_agents", "http"});
         const auto node = root["gateway"];
         if (mode == Transport::local_tcp) keys(node, {"bind_host", "port", "timeout_ms", "max_connections"});
         else keys(node, {"bind_host", "port", "timeout_ms", "max_connections", "heartbeat_interval_ms", "heartbeat_timeout_ms"});
@@ -164,20 +166,47 @@ Gateway load_gateway(const std::filesystem::path& path) {
         if (mode == Transport::local_tcp) loopback(result.bind_host);
         else {
             if (!ip_address(result.bind_host)) throw Error("gateway bind_host must be an IP literal");
-            result.tls = tls_files(root, path);
+            result.tls = tls_files(root["security"], path);
             result.heartbeat_interval = std::chrono::milliseconds(number(node, "heartbeat_interval_ms", {.min = 100, .max = 60000}));
             result.heartbeat_timeout = std::chrono::milliseconds(number(node, "heartbeat_timeout_ms", {.min = 100, .max = 60000}));
             const auto agents = root["authorized_agents"];
             if (!agents.IsSequence() || agents.size() == 0 || agents.size() > 1024) throw Error("authorized_agents requires 1 to 1024 entries");
-            std::set<std::string> names, fingerprints;
+            std::set<std::string> names, fingerprints, hostnames;
             for (const auto& agent : agents) {
-                keys(agent, {"name", "certificate_sha256"});
-                AuthorizedAgent value{scalar(agent, "name"), scalar(agent, "certificate_sha256")};
+                keys(agent, {"name", "certificate_sha256", "services"});
+                AuthorizedAgent value{scalar(agent, "name"), scalar(agent, "certificate_sha256"), {}};
                 if (!security::valid_identifier(value.name) || !security::valid_fingerprint(value.certificate_sha256))
                     throw Error("invalid agent identity or fingerprint");
                 if (!names.insert(value.name).second || !fingerprints.insert(value.certificate_sha256).second)
                     throw Error("duplicate authorized identity");
+                if (const auto services = agent["services"]) {
+                    if (!services.IsSequence() || services.size() > 32) throw Error("authorized services must contain at most 32 entries");
+                    std::set<std::string> service_names;
+                    for (const auto& service : services) {
+                        keys(service, {"name", "hostname"});
+                        PublishedService entry{scalar(service, "name"), scalar(service, "hostname")};
+                        if (!security::valid_identifier(entry.name) || !security::valid_hostname(entry.hostname) ||
+                            !service_names.insert(entry.name).second || !hostnames.insert(entry.hostname).second)
+                            throw Error("invalid or duplicate authorized service");
+                        value.services.push_back(std::move(entry));
+                    }
+                }
                 result.authorized_agents.push_back(std::move(value));
+            }
+            if (const auto node_http = root["http"]) {
+                keys(node_http, {"bind_host", "port", "security", "max_connections", "max_in_flight", "requests_per_second", "request_timeout_ms"});
+                Https value;
+                value.bind_host = scalar(node_http, "bind_host");
+                if (!ip_address(value.bind_host)) throw Error("HTTPS bind_host must be an IP literal");
+                value.port = static_cast<std::uint16_t>(number(node_http, "port", {.min = 1, .max = 65535}));
+                if (value.port == result.port) throw Error("HTTPS and tunnel ports must differ");
+                value.tls = tls_files(node_http["security"], path, false);
+                value.max_connections = number(node_http, "max_connections", {.min = 1, .max = 256});
+                value.max_in_flight = number(node_http, "max_in_flight", {.min = 1, .max = 64});
+                value.requests_per_second = number(node_http, "requests_per_second", {.min = 1, .max = 10000});
+                value.timeout = std::chrono::milliseconds(number(node_http, "request_timeout_ms", {.min = 100, .max = 60000}));
+                if (hostnames.empty()) throw Error("HTTPS requires at least one authorized service");
+                result.http = std::move(value);
             }
         }
         return result;

@@ -14,3 +14,16 @@ security:
 authorized_agents:
   - name: home-server
     certificate_sha256: REPLACE_WITH_LOWERCASE_64_HEX_CERTIFICATE_SHA256
+    services:
+      - {name: api, hostname: api.example.com}
+      - {name: website, hostname: app.example.com}
+http:
+  bind_host: 0.0.0.0
+  port: 8443
+  max_connections: 32
+  max_in_flight: 16
+  requests_per_second: 100
+  request_timeout_ms: 5000
+  security:
+    certificate_file: certs/public-https.crt
+    private_key_file: certs/public-https.key

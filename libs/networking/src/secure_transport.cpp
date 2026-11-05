@@ -1,5 +1,7 @@
 #include <shadow/networking/secure_transport.hpp>
 #include "secure_session.hpp"
+#include "proxy_router.hpp"
+#include "https_server.hpp"
 #include <shadow/core/error.hpp>
 #include <shadow/observability/log.hpp>
 #include <shadow/security/tls.hpp>
@@ -22,7 +24,8 @@ using observability::log;
 class SecureGateway : public std::enable_shared_from_this<SecureGateway> {
 public:
     SecureGateway(asio::io_context& context, const configuration::Gateway& config)
-        : tls_(security::make_tls_context(config.tls, true)), acceptor_(context), config_(config) {
+        : context_(context), tls_(security::make_tls_context(config.tls, true)), acceptor_(context), config_(config),
+          proxy_(std::make_shared<detail::GatewayProxy>(context, config)) {
         const tcp::endpoint endpoint(asio::ip::make_address(config.bind_host), config.port);
         acceptor_.open(endpoint.protocol());
 #ifndef _WIN32
@@ -32,12 +35,23 @@ public:
         acceptor_.listen(static_cast<int>(config.max_connections));
     }
     void start() {
+        if (config_.http) {
+            http_ = std::make_shared<detail::HttpsServer>(context_, *config_.http,
+                [owner = std::weak_ptr<detail::GatewayProxy>(proxy_)](protocol::proxy::Request request, detail::ProxyCompletion done) {
+                    if (const auto router = owner.lock()) return router->dispatch(std::move(request), std::move(done));
+                    done(protocol::proxy::error_response(0, 503));
+                    return detail::CancelRequest{};
+                });
+            http_->start();
+        }
         log(Level::info, "gateway", "wss_listening port=" + std::to_string(config_.port));
         accept();
     }
     void stop() {
         if (stopping_) return;
         stopping_ = true;
+        if (http_) http_->stop();
+        proxy_->stop();
         Code ignored;
         acceptor_.close(ignored);
         const auto sessions = sessions_;
@@ -75,9 +89,14 @@ private:
             const auto gateway = owner.lock();
             return gateway && !gateway->stopping_ && gateway->names_.insert(name).second;
         };
+        options.message = [owner, holder](const protocol::tunnel::Frame& frame) {
+            const auto gateway = owner.lock(); const auto session = holder->lock();
+            return gateway && session && gateway->proxy_->message(session, frame);
+        };
         options.done = [owner, holder](const std::string& reason) {
             if (auto gateway = owner.lock()) {
                 if (auto session = holder->lock()) {
+                    gateway->proxy_->disconnected(session);
                     if (session->claimed()) gateway->names_.erase(session->name());
                     gateway->sessions_.erase(session);
                 }
@@ -89,9 +108,12 @@ private:
         sessions_.insert(session);
         session->accept();
     }
+    asio::io_context& context_;
     std::shared_ptr<asio::ssl::context> tls_;
     tcp::acceptor acceptor_;
     configuration::Gateway config_;
+    std::shared_ptr<detail::GatewayProxy> proxy_;
+    std::shared_ptr<detail::HttpsServer> http_;
     std::unordered_set<std::shared_ptr<SecureSession>> sessions_;
     std::set<std::string> names_;
     bool stopping_ = false;
@@ -107,9 +129,25 @@ public:
         options.name = config_.name;
         options.timeout = config_.timeout;
         const auto owner = std::weak_ptr<SecureAgent>(shared_from_this());
-        options.ready = [owner] { if (const auto agent = owner.lock()) agent->ready_at_ = std::chrono::steady_clock::now(); };
-        options.done = [owner](const std::string& reason) { if (const auto agent = owner.lock()) agent->disconnected(reason); };
+        auto holder = std::make_shared<std::weak_ptr<SecureSession>>();
+        auto proxy = std::make_shared<detail::AgentProxy>(context_, config_, [holder](const protocol::tunnel::Frame& frame) {
+            if (const auto session = holder->lock()) {
+                if (session->transmit(frame)) return true;
+                session->stop();
+            }
+            return false;
+        });
+        options.ready = [owner, proxy] {
+            if (const auto agent = owner.lock()) agent->ready_at_ = std::chrono::steady_clock::now();
+            proxy->start();
+        };
+        options.message = [proxy](const protocol::tunnel::Frame& frame) { return proxy->message(frame); };
+        options.done = [owner, proxy](const std::string& reason) {
+            proxy->stop();
+            if (const auto agent = owner.lock()) agent->disconnected(reason);
+        };
         session_ = std::make_shared<SecureSession>(tcp::socket(context_), tls_, std::move(options));
+        *holder = session_;
         session_->connect(config_.gateway_host, config_.port);
     }
     void stop() {

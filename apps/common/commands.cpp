@@ -38,6 +38,7 @@ int execute(int argc, char** argv, std::string_view executable) {
             } else if (args[3] == "gateway") {
                 const auto config = configuration::load_gateway(args[5]);
                 if (config.transport == configuration::Transport::wss) (void)security::make_tls_context(config.tls, true);
+                if (config.http) (void)security::make_https_context(config.http->tls);
             }
             else return usage(executable, false);
             std::cout << "Configuration valid\n";

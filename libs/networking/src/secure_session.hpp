@@ -1,5 +1,6 @@
 #pragma once
 #include <shadow/security/tls.hpp>
+#include <shadow/protocol/tunnel.hpp>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/ip/tcp.hpp>
 #include <chrono>
@@ -17,6 +18,7 @@ struct SessionOptions {
     std::function<std::string(const std::string&)> authorize;
     std::function<bool(const std::string&)> claim;
     std::function<void()> ready;
+    std::function<bool(const protocol::tunnel::Frame&)> message;
     std::function<void(const std::string&)> done;
 };
 class SecureSession {
@@ -28,6 +30,7 @@ public:
     void stop();
     const std::string& name() const;
     bool claimed() const;
+    bool transmit(const protocol::tunnel::Frame& frame);
 private:
     class Impl;
     std::shared_ptr<Impl> impl_;

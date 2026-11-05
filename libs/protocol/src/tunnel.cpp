@@ -30,6 +30,12 @@ void validate(const Frame& frame) {
     case Type::goodbye:
         if (frame.payload != "shutdown") throw Error("invalid goodbye reason");
         break;
+    case Type::register_services: case Type::registered:
+        (void)proxy::decode_services(frame.payload); break;
+    case Type::request: case Type::response:
+        if (frame.payload.empty() || frame.payload.size() > proxy::max_packet) throw Error("proxy payload limit exceeded");
+        break;
+    case Type::cancel: (void)proxy::decode_id(frame.payload); break;
     default: throw Error("unsupported tunnel message type");
     }
 }
@@ -49,9 +55,10 @@ Welcome decode_welcome(const std::string& payload) {
 }
 std::vector<std::uint8_t> encode(const Frame& frame) {
     validate(frame);
-    if (frame.payload.empty() || frame.payload.size() > 256) throw Error("invalid tunnel payload length");
+    if (frame.payload.empty() || frame.payload.size() > proxy::max_packet ||
+        (frame.type <= Type::goodbye && frame.payload.size() > 256)) throw Error("invalid tunnel payload length");
     const auto size = static_cast<std::uint32_t>(frame.payload.size());
-    std::vector<std::uint8_t> bytes{'S','H','D','W', 2, static_cast<std::uint8_t>(frame.type), 0, 0,
+    std::vector<std::uint8_t> bytes{'S','H','D','W', 3, static_cast<std::uint8_t>(frame.type), 0, 0,
         static_cast<std::uint8_t>(size >> 24U), static_cast<std::uint8_t>(size >> 16U),
         static_cast<std::uint8_t>(size >> 8U), static_cast<std::uint8_t>(size)};
     bytes.insert(bytes.end(), frame.payload.begin(), frame.payload.end());
@@ -59,10 +66,11 @@ std::vector<std::uint8_t> encode(const Frame& frame) {
 }
 Frame decode(std::span<const std::uint8_t> bytes) {
     if (bytes.size() < 12 || bytes.size() > max_message || bytes[0] != 'S' || bytes[1] != 'H' || bytes[2] != 'D' || bytes[3] != 'W' ||
-        bytes[4] != 2 || bytes[6] != 0 || bytes[7] != 0) throw Error("invalid tunnel frame header");
+        bytes[4] != 3 || bytes[6] != 0 || bytes[7] != 0) throw Error("invalid tunnel frame header");
     std::uint32_t size = 0;
     for (std::size_t i = 8; i < 12; ++i) size = (size << 8U) | bytes[i];
-    if (size == 0 || size > 256 || bytes.size() != 12 + size) throw Error("invalid tunnel frame length");
+    if (size == 0 || size > proxy::max_packet || bytes.size() != 12 + size ||
+        (bytes[5] <= 5 && size > 256)) throw Error("invalid tunnel frame length");
     Frame frame{static_cast<Type>(bytes[5]), std::string(bytes.begin() + 12, bytes.end())};
     validate(frame);
     return frame;

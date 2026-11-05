@@ -30,7 +30,7 @@ public:
     Impl(tcp::socket socket, std::shared_ptr<asio::ssl::context> tls, SessionOptions options)
         : tls_(std::move(tls)), ws_(std::move(socket), *tls_), resolver_(ws_.get_executor()),
           deadline_(ws_.get_executor()), heartbeat_(ws_.get_executor()), options_(std::move(options)), name_(options_.name) {
-        ws_.read_message_max(wire::max_message);
+        ws_.read_message_max(wire::control_message);
         ws_.write_buffer_bytes(512);
         ws_.binary(true);
         ws_.set_option(websocket::stream_base::timeout{options_.timeout, websocket::stream_base::none(), false});
@@ -61,6 +61,10 @@ public:
     void stop() { graceful(true); }
     const std::string& name() const { return name_; }
     bool claimed() const { return claimed_; }
+    bool transmit(const wire::Frame& frame) {
+        if (!active_ || closed_ || stopping_ || frame.type < wire::Type::register_services) return false;
+        return send(frame);
+    }
 
 private:
     void observe_close() {
@@ -171,6 +175,7 @@ private:
                 options_.pong_timeout = welcome.timeout;
             }
             active_ = true;
+            ws_.read_message_max(wire::max_message);
             cancel_deadline();
             log(Level::info, options_.server ? "gateway" : "agent", "tunnel_established session=" + session_id_);
             if (options_.ready) options_.ready();
@@ -178,6 +183,10 @@ private:
             return;
         }
         if (frame.type == wire::Type::goodbye) { graceful(false); return; }
+        if (frame.type >= wire::Type::register_services) {
+            if (!options_.message || !options_.message(frame)) throw Error("invalid proxy state");
+            return;
+        }
         if (options_.server) {
             if (frame.type != wire::Type::ping || sequence_ == std::numeric_limits<std::uint64_t>::max() ||
                 frame.payload != wire::heartbeat_id(sequence_ + 1)) throw Error("unexpected heartbeat sequence");
@@ -216,18 +225,25 @@ private:
             });
         });
     }
-    void send(const wire::Frame& frame) {
-        if (closed_) return;
-        if (writes_.size() >= 4) { finish("write_queue_limit"); return; }
+    bool send(const wire::Frame& frame) {
+        if (closed_) return false;
+        auto bytes = std::make_shared<std::vector<std::uint8_t>>(wire::encode(frame));
+        if (writes_.size() >= 64 || queued_bytes_ + bytes->size() > 4 * wire::max_message) {
+            if (frame.type <= wire::Type::goodbye) finish("write_queue_limit");
+            return false;
+        }
         const bool idle = writes_.empty();
-        writes_.push_back(std::make_shared<std::vector<std::uint8_t>>(wire::encode(frame)));
+        queued_bytes_ += bytes->size();
+        writes_.push_back(std::move(bytes));
         if (idle) write();
+        return true;
     }
     void write() {
         const auto bytes = writes_.front();
         ws_.async_write(asio::buffer(*bytes), [self = shared_from_this(), bytes](Code error, std::size_t) {
             if (self->closed_) return;
             if (error) { self->finish("tunnel_write_failed"); return; }
+            self->queued_bytes_ -= bytes->size();
             self->writes_.pop_front();
             if (!self->writes_.empty()) self->write();
             else if (self->stopping_) self->close_websocket();
@@ -279,6 +295,7 @@ private:
     http::request_parser<http::empty_body> request_;
     websocket::response_type upgrade_response_;
     std::deque<std::shared_ptr<std::vector<std::uint8_t>>> writes_;
+    std::size_t queued_bytes_ = 0;
     std::uint64_t sequence_ = 0, deadline_generation_ = 0, heartbeat_generation_ = 0;
     bool active_ = false, closed_ = false, stopping_ = false, claimed_ = false;
     bool waiting_pong_ = false, close_started_ = false;
@@ -292,4 +309,5 @@ void SecureSession::connect(const std::string& host, std::uint16_t port) { impl_
 void SecureSession::stop() { impl_->stop(); }
 const std::string& SecureSession::name() const { return impl_->name(); }
 bool SecureSession::claimed() const { return impl_->claimed(); }
+bool SecureSession::transmit(const protocol::tunnel::Frame& frame) { return impl_->transmit(frame); }
 } // namespace shadow::networking::detail

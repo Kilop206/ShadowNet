@@ -1,10 +1,11 @@
-# Teste HTTP ponta a ponta (planejado para M3)
+# Teste HTTP ponta a ponta — M3
 
-Há túnel WSS/TLS 1.3/mTLS no M2, mas nenhum listener HTTP de visitantes ou
-encaminhamento. Nenhum teste HTTP E2E é
-declarado aprovado. `integration.local_transport` valida o diagnóstico M1;
-`integration.secure_transport` valida certificados, WSS, heartbeat e recuperação M2.
+`e2e.reverse_proxy` usa Agent/Gateway reais, duas origens HTTP e cliente HTTPS
+com certificados verificados. Não usa respostas simuladas no caminho principal.
+`backend.py` produz identidades distintas e casos HTTP adversariais;
+`tunnel_peer.py` implementa um peer independente para testar autorização,
+correlação entre sessões e respostas atrasadas.
 
-No M3, adicionar a validação Cliente HTTPS → Gateway → túnel autenticado →
-Agent → API local → Cliente, com métodos, cabeçalhos, corpos, dois serviços e
-requisições simultâneas. A API de exemplo já está em `examples/simple-api/`.
+Executar: `ctest --test-dir build/mingw -R e2e.reverse_proxy --output-on-failure`.
+O CTest fornece caminhos dos executáveis e OpenSSL. Fixtures/chaves efêmeras
+ficam no build e são limpas. O teste não altera trust stores, firewall ou DNS.

@@ -1,4 +1,4 @@
-add_executable(shadow-unit unit/foundation.cpp unit/tunnel.cpp)
+add_executable(shadow-unit unit/foundation.cpp unit/tunnel.cpp unit/proxy.cpp)
 target_link_libraries(shadow-unit PRIVATE shadow_protocol shadow_configuration shadow_observability Catch2::Catch2WithMain)
 target_compile_definitions(shadow-unit PRIVATE SHADOW_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 add_test(NAME unit.foundation COMMAND shadow-unit)
@@ -16,3 +16,8 @@ add_test(NAME integration.secure_transport
     --agent $<TARGET_FILE:shadow-agent> --gateway $<TARGET_FILE:shadow-gateway>
     --cli $<TARGET_FILE:shadow> --source "${PROJECT_SOURCE_DIR}" --openssl "${SHADOW_OPENSSL_EXECUTABLE}")
 set_tests_properties(integration.secure_transport PROPERTIES TIMEOUT 120)
+add_test(NAME e2e.reverse_proxy
+  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/e2e/reverse_proxy.py"
+    --agent $<TARGET_FILE:shadow-agent> --gateway $<TARGET_FILE:shadow-gateway>
+    --cli $<TARGET_FILE:shadow> --source "${PROJECT_SOURCE_DIR}" --openssl "${SHADOW_OPENSSL_EXECUTABLE}")
+set_tests_properties(e2e.reverse_proxy PROPERTIES TIMEOUT 180)

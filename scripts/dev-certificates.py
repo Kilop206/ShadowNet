@@ -48,7 +48,7 @@ def generate(directory, openssl="openssl", test_fixtures=False):
         serial += 1
 
     root("ca")
-    leaf("gateway", "serverAuth", san="DNS:localhost,DNS:gateway,IP:127.0.0.1,IP:::1")
+    leaf("gateway", "serverAuth", san="DNS:localhost,DNS:gateway,DNS:api.example.test,DNS:app.example.test,IP:127.0.0.1,IP:::1")
     leaf("agent")
     if test_fixtures:
         leaf("other-agent")
@@ -78,13 +78,20 @@ def generate(directory, openssl="openssl", test_fixtures=False):
             key.chmod(0o600)
     fingerprint = hashlib.sha256(ssl.PEM_cert_to_DER_cert((directory / "agent.crt").read_text(encoding="ascii"))).hexdigest()
     security = "security:\n  ca_file: ca.crt\n  certificate_file: {certificate}.crt\n  private_key_file: {certificate}.key\n"
+    services = ("services:\n  - name: api\n    hostname: api.example.test\n    local_host: 127.0.0.1\n    local_port: 8080\n"
+                "  - name: website\n    hostname: app.example.test\n    local_host: 127.0.0.1\n    local_port: 3000\n")
+    policy = ("    services:\n      - {name: api, hostname: api.example.test}\n"
+              "      - {name: website, hostname: app.example.test}\n")
+    public = ("http:\n  bind_host: 127.0.0.1\n  port: 8443\n  max_connections: 32\n  max_in_flight: 16\n"
+              "  requests_per_second: 100\n  request_timeout_ms: 5000\n  security:\n"
+              "    certificate_file: gateway.crt\n    private_key_file: gateway.key\n")
     (directory / "agent.wss.yaml").write_text(
         "transport: wss\nagent:\n  name: home-server\n  gateway_host: localhost\n  port: 7443\n  timeout_ms: 3000\n"
-        "  reconnect:\n    enabled: true\n    initial_ms: 250\n    max_ms: 30000\n" + security.format(certificate="agent"), encoding="utf-8")
+        "  reconnect:\n    enabled: true\n    initial_ms: 250\n    max_ms: 30000\n" + security.format(certificate="agent") + services, encoding="utf-8")
     (directory / "gateway.wss.yaml").write_text(
         "transport: wss\ngateway:\n  bind_host: 127.0.0.1\n  port: 7443\n  timeout_ms: 3000\n  max_connections: 64\n"
         "  heartbeat_interval_ms: 1000\n  heartbeat_timeout_ms: 3000\n" + security.format(certificate="gateway") +
-        "authorized_agents:\n  - name: home-server\n    certificate_sha256: " + fingerprint + "\n", encoding="utf-8")
+        "authorized_agents:\n  - name: home-server\n    certificate_sha256: " + fingerprint + "\n" + policy + public, encoding="utf-8")
     (directory / "agent.compose.yaml").write_text(
         (directory / "agent.wss.yaml").read_text(encoding="utf-8").replace("gateway_host: localhost", "gateway_host: gateway")
         .replace("private_key_file: agent.key", "private_key_file: private/leaf.key"), encoding="utf-8")
