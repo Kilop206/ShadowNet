@@ -1,0 +1,11 @@
+.git
+.deps
+build
+certs
+*.key
+*.pem
+*.p12
+*.pfx
+.env
+__pycache__
+graphify-out

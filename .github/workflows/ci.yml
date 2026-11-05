@@ -1,0 +1,53 @@
+name: C++ foundation
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - compiler: g++
+            sanitizers: 'OFF'
+            tidy: 'OFF'
+          - compiler: clang++
+            sanitizers: 'OFF'
+            tidy: 'ON'
+          - compiler: g++
+            sanitizers: 'ON'
+            tidy: 'OFF'
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build clang clang-tidy
+      - name: Configure
+        run: >-
+          cmake --preset bootstrap -DCMAKE_CXX_COMPILER=${{ matrix.compiler }}
+          -DSHADOW_SANITIZERS=${{ matrix.sanitizers }} -DSHADOW_CLANG_TIDY=${{ matrix.tidy }}
+      - run: cmake --build --preset bootstrap --parallel 2
+      - run: ctest --preset bootstrap
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: linux-${{ matrix.compiler }}-${{ matrix.sanitizers }}-logs
+          path: build/bootstrap/Testing/Temporary/
+  windows-mingw:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-python
+      - run: cmake --preset bootstrap
+      - run: cmake --build --preset bootstrap --parallel 2
+      - run: ctest --preset bootstrap

@@ -1,0 +1,39 @@
+# M1 loopback-only laboratory. No public port and no HTTP forwarding yet.
+services:
+  gateway:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: shadownet:local
+    command: [shadow-gateway, --config, config/gateway.local.yaml]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: [CMD, shadow-agent, --config, config/agent.local.yaml]
+      interval: 5s
+      timeout: 4s
+      retries: 5
+  agent:
+    image: shadownet:local
+    network_mode: service:gateway
+    depends_on:
+      gateway:
+        condition: service_healthy
+    command: [shadow-agent, --config, config/agent.local.yaml]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+  api:
+    image: python:3.12-slim
+    network_mode: service:gateway
+    depends_on:
+      gateway:
+        condition: service_healthy
+    command: [python, -B, /app/server.py]
+    volumes:
+      - ../examples/simple-api/server.py:/app/server.py:ro
+    user: '10001:10001'
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
