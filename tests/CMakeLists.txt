@@ -1,0 +1,12 @@
+add_executable(shadow-unit unit/foundation.cpp)
+target_link_libraries(shadow-unit PRIVATE shadow_protocol shadow_configuration shadow_observability Catch2::Catch2WithMain)
+target_compile_definitions(shadow-unit PRIVATE SHADOW_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+add_test(NAME unit.foundation COMMAND shadow-unit)
+set_tests_properties(unit.foundation PROPERTIES TIMEOUT 30)
+
+find_package(Python3 3.9 REQUIRED COMPONENTS Interpreter)
+add_test(NAME integration.local_transport
+  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/integration/local_transport.py"
+    --agent $<TARGET_FILE:shadow-agent> --gateway $<TARGET_FILE:shadow-gateway>
+    --cli $<TARGET_FILE:shadow> --source "${PROJECT_SOURCE_DIR}")
+set_tests_properties(integration.local_transport PROPERTIES TIMEOUT 60)

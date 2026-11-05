@@ -1,0 +1,16 @@
+# M1: one local handshake, then exit. Services are validated but NOT published.
+transport: local_tcp
+agent:
+  name: home-server
+  gateway_host: 127.0.0.1
+  port: 7443
+  timeout_ms: 3000
+services:
+  - name: api
+    hostname: api.example.test
+    local_host: 127.0.0.1
+    local_port: 8080
+  - name: website
+    hostname: app.example.test
+    local_host: 127.0.0.1
+    local_port: 3000

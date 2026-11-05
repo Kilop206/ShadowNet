@@ -1,0 +1,7 @@
+# M1: never bind a public interface. No TLS or proxy listener yet.
+transport: local_tcp
+gateway:
+  bind_host: 127.0.0.1
+  port: 7443
+  timeout_ms: 3000
+  max_connections: 64
