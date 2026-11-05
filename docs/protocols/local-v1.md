@@ -35,13 +35,12 @@ de múltiplas mensagens no M1.
 
 ## Evolução planejada para o túnel seguro
 
-M2 introduzirá negociação versionada sobre WebSocket binário com TLS 1.3 e
-mTLS obrigatório. A identidade virá do certificado, nunca do nome autodeclarado.
-Mensagens previstas: HELLO/HELLO_ACK, REGISTER/REGISTER_ACK, PING/PONG,
-ERROR, CLOSE; M3 adicionará REQUEST/RESPONSE e identificadores de sessão,
-serviço e requisição. O formato será especificado antes da implementação.
+O M2 implementou [WSS v2](wss-v2.md) com TLS 1.3/mTLS e identidade autorizada
+pelo fingerprint do certificado. Seus frames são HELLO, WELCOME, PING, PONG e
+GOODBYE. Registro de serviços e REQUEST/RESPONSE ficam para M3. O formato v1
+desta página permanece somente no diagnóstico local; não é aceito em WSS.
 
-Uma sessão nova invalidará IDs e respostas da anterior. A autorização vinculará
-certificados a domínios e serviços. Heartbeat, reconexão com backoff e jitter,
-limites de frame, janela de requisições, orçamento de buffers e timeouts
-precisam de testes. Não são funcionalidades disponíveis no protocolo local.
+Sessões WSS novas recebem IDs aleatórios e reiniciam contadores. Heartbeat,
+backoff/jitter, limites e timeouts têm testes no M2. Autorização de domínios,
+janela de requisições e orçamento de corpos HTTP são M3/M4. Nenhuma dessas
+funções é inferida do handshake TCP v1.

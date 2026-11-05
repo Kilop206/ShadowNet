@@ -4,7 +4,10 @@ The bootstrap build uses Boost 1.90.0 (Boost Software License 1.0), yaml-cpp
 0.9.0 (MIT), and Catch2 3.8.1 (Boost Software License 1.0, tests only).
 System-package builds may use other compatible versions; distributors must
 retain their corresponding notices. Python is only used for tools/tests and
-the optional example API. OpenSSL and Beast are planned, not used in M1.
+the optional example API. M2 uses Beast (part of Boost, license below) and
+OpenSSL 3.0+ (Apache License 2.0, https://www.openssl.org/source/license.html).
+OpenSSL is provided by the system and is not vendored or bundled by this project;
+binary redistributors must retain the license/notices of the actual distribution.
 
 ## Boost Software License - Version 1.0 - August 17th, 2003
 

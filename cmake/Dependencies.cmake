@@ -12,7 +12,7 @@ if(SHADOW_FETCH_DEPENDENCIES)
   shadow_archive(boost-1.90.0-cmake
     https://github.com/boostorg/boost/releases/download/boost-1.90.0/boost-1.90.0-cmake.tar.gz
     SHADOW_BOOST_URL)
-  set(BOOST_INCLUDE_LIBRARIES asio CACHE STRING "Only configure required Boost libraries")
+  set(BOOST_INCLUDE_LIBRARIES "asio;beast")
   set(BOOST_ENABLE_CMAKE ON CACHE BOOL "Enable Boost CMake")
   FetchContent_Declare(boost URL "${SHADOW_BOOST_URL}"
     URL_HASH SHA256=913ca43d49e93d1b158c9862009add1518a4c665e7853b349a6492d158b036d4
@@ -20,7 +20,7 @@ if(SHADOW_FETCH_DEPENDENCIES)
   FetchContent_MakeAvailable(boost)
   # Modular sources need Asio's transitive include directories, not the
   # aggregate Boost::headers target intended for installed distributions.
-  target_link_libraries(shadow_boost INTERFACE Boost::asio)
+  target_link_libraries(shadow_boost INTERFACE Boost::asio Boost::beast)
   shadow_archive(yaml-cpp-0.9.0 https://codeload.github.com/jbeder/yaml-cpp/tar.gz/refs/tags/yaml-cpp-0.9.0 SHADOW_YAML_URL)
   set(YAML_CPP_BUILD_TESTS OFF CACHE BOOL "")
   set(YAML_CPP_BUILD_TOOLS OFF CACHE BOOL "")

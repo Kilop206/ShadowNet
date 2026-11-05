@@ -6,7 +6,7 @@ cmake --build --preset bootstrap --parallel 4
 ctest --preset bootstrap
 ```
 
-`unit.foundation` executa Catch2 com casos de framing, versões e tipos
+`unit.foundation` executa Catch2 com casos de framing v1/v2, versões e tipos
 inválidos, limites de tamanho, identificadores, hostnames, YAML inválido,
 campos desconhecidos/duplicados, allowlist e logging sem injeção de linhas.
 
@@ -37,7 +37,7 @@ cmake --build --preset bootstrap --parallel 4
 ```
 
 No Windows, o LLVM separado pode não descobrir os includes do MinGW. Para
-analisar as nove unidades de produção com a toolchain local:
+analisar as treze unidades de produção com a toolchain local:
 
 ```powershell
 ./scripts/check-static.ps1 -BuildDir build/mingw -MingwRoot C:/mingw64
@@ -51,9 +51,24 @@ O CI contém jobs Linux GCC/Clang, sanitizers e Windows MinGW; a definição de
 workflow não comprova que esses jobs já rodaram. Resultados locais efetivamente
 obtidos estão em `docs/milestones/m1.md`.
 
-## Não coberto pelo M1
+## Integração TLS/WSS do M2
 
-TLS/certificados e autenticação: M2. HTTP, métodos, cabeçalhos, corpos, roteamento
-e isolamento de serviços em requisições: M3. Reconexão e interrupções em carga:
-M2/M4. Não existe um teste HTTP E2E aprovado nesta versão. O Compose é uma
-preparação de ambiente, não prova que o tráfego HTTP já atravessa o túnel.
+`integration.secure_transport` gera CA e certificados descartáveis com o OpenSSL
+CLI e executa Agent/Gateway reais, além de peers TLS/WebSocket independentes em
+Python. Cobre mTLS, ausência de certificado, CA estrangeira, expiração, EKU,
+SAN/hostname, pin negado, nome divergente, identidade duplicada, dois agentes,
+TLS 1.2 rejeitado, upgrade inválido, frame inválido/texto/excessivo, heartbeat,
+replay, falta de PONG, prazos, fila de conexão e reconexão após reinício.
+
+Também valida backoff/jitter, pares de chaves, arquivos ausentes, autorização
+malformada e permissões Unix. Um peer confirma fechamento WebSocket e TLS
+`close_notify` em todas as plataformas; SIGTERM de processos permanece POSIX.
+As fixtures nunca são versionadas e não alteram a confiança do sistema.
+Esse teste não depende de bibliotecas Python externas nem de APIs comerciais.
+
+## Ainda não coberto
+
+HTTP, métodos, cabeçalhos, corpos, roteamento
+e isolamento de serviços em requisições: M3. Interrupções em carga de proxy e
+backpressure HTTP: M4. Não existe teste HTTP E2E aprovado nesta versão; o Compose
+valida WSS/mTLS entre contêineres e mantém uma API preparatória para o M3.

@@ -1,0 +1,16 @@
+# Template: replace paths and fingerprint. This is not a usable credential.
+transport: wss
+gateway:
+  bind_host: 0.0.0.0
+  port: 7443
+  timeout_ms: 5000
+  max_connections: 64
+  heartbeat_interval_ms: 1000
+  heartbeat_timeout_ms: 3000
+security:
+  ca_file: certs/agents-ca.crt
+  certificate_file: certs/gateway.crt
+  private_key_file: certs/gateway.key
+authorized_agents:
+  - name: home-server
+    certificate_sha256: REPLACE_WITH_LOWERCASE_64_HEX_CERTIFICATE_SHA256

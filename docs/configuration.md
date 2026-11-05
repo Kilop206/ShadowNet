@@ -1,4 +1,6 @@
-# Configuração M1
+# Configuração
+
+## Diagnóstico M1
 
 Exemplos: `config/agent.local.yaml` e `config/gateway.local.yaml`. Um documento
 YAML por arquivo, até 64 KiB. Chaves duplicadas, campos desconhecidos,
@@ -36,4 +38,36 @@ shadow config validate --type gateway --config config/gateway.local.yaml
 A validação é offline e não reserva a porta ou prova a existência de um
 servidor. Retornos: 0 = validação/handshake concluído ou Gateway encerrado
 normalmente; 1 = configuração/rede/runtime falhou; 2 = comando inválido.
-No M2 haverá schema de TLS com validação dos arquivos antes de conectar.
+No WSS, `shadow config validate` também carrega e valida credenciais TLS antes
+de qualquer conexão.
+
+## Túnel WSS do M2
+
+Usar `transport: wss`. Exemplos de schema em `config/*.wss.yaml`; eles contêm
+caminhos e fingerprint a substituir. Configurações funcionais de laboratório
+são geradas por `python scripts/dev-certificates.py` em `build/dev-pki/`.
+
+| Campo | Regra WSS |
+|---|---|
+| `agent.gateway_host` | Hostname DNS ASCII minúsculo ou IP literal; verificado contra o certificado |
+| `agent.reconnect.enabled` | Obrigatório: `true`/`false`, sem coerções `yes`/`1` |
+| `agent.reconnect.initial_ms` | 100–60000 |
+| `agent.reconnect.max_ms` | 100–300000, não inferior a `initial_ms` |
+| `gateway.bind_host` | IP literal; permite interface pública apenas neste transporte autenticado |
+| `gateway.heartbeat_interval_ms` | 100–60000; negociado em WELCOME |
+| `gateway.heartbeat_timeout_ms` | 100–60000; negociado em WELCOME |
+| `security.ca_file` | CA usada para validar o peer |
+| `security.certificate_file` | Cadeia PEM local, leaf primeiro |
+| `security.private_key_file` | Chave PEM correspondente; sem senha interativa |
+| `authorized_agents` (Gateway) | 1–1024 pares de `name` e `certificate_sha256`, sem duplicação |
+| `authorized_agents[].certificate_sha256` | SHA-256 do leaf DER, 64 hex minúsculos sem `:` |
+
+`port`, `timeout_ms` e `max_connections` mantêm os limites do M1. O timeout
+cobre conexão/DNS, TLS, upgrade e HELLO/WELCOME. A reconexão tem jitter e não
+altera destinos configurados. Chaves precisam de 0600/0400 no Unix; no Windows,
+o administrador deve restringir ACLs. Caminhos TLS são relativos ao YAML, não
+ao diretório de execução. Ver [TLS](security/tls.md).
+
+Os dois schemas rejeitam chaves desconhecidas, duplicadas e documentos YAML
+múltiplos. Opções como `verify: false` e `tls: false` são inválidas. Os serviços
+continuam restritos a loopback e apenas validados; registro/publicação é M3.

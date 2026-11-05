@@ -1,0 +1,20 @@
+# Template: generate working laboratory configs with scripts/dev-certificates.py.
+transport: wss
+agent:
+  name: home-server
+  gateway_host: gateway.example.com
+  port: 7443
+  timeout_ms: 5000
+  reconnect:
+    enabled: true
+    initial_ms: 250
+    max_ms: 30000
+security:
+  ca_file: certs/gateway-ca.crt
+  certificate_file: certs/agent.crt
+  private_key_file: certs/agent.key
+services:
+  - name: api
+    hostname: api.example.com
+    local_host: 127.0.0.1
+    local_port: 8080

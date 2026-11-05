@@ -2,6 +2,8 @@
 #include <shadow/core/error.hpp>
 #include <shadow/configuration/config.hpp>
 #include <shadow/networking/local_transport.hpp>
+#include <shadow/networking/secure_transport.hpp>
+#include <shadow/security/tls.hpp>
 #include <shadow/observability/log.hpp>
 #include <iostream>
 #include <string>
@@ -11,7 +13,7 @@ namespace shadow::commands {
 namespace {
 int usage(std::string_view executable, bool valid) {
     if (executable == "shadow") {
-        std::cout << "ShadowNet " << version << " (milestone 1, local diagnostic only)\n"
+        std::cout << "ShadowNet " << version << " (WSS/mTLS tunnel and local diagnostic)\n"
                   << "shadow version\nshadow agent start --config FILE\nshadow gateway start --config FILE\n"
                   << "shadow config validate --type agent|gateway --config FILE\n";
     } else {
@@ -30,10 +32,15 @@ int execute(int argc, char** argv, std::string_view executable) {
         }
         if (executable == "shadow" && args.size() == 6 && args[0] == "config" && args[1] == "validate" &&
             args[2] == "--type" && args[4] == "--config") {
-            if (args[3] == "agent") (void)configuration::load_agent(args[5]);
-            else if (args[3] == "gateway") (void)configuration::load_gateway(args[5]);
+            if (args[3] == "agent") {
+                const auto config = configuration::load_agent(args[5]);
+                if (config.transport == configuration::Transport::wss) (void)security::make_tls_context(config.tls, false);
+            } else if (args[3] == "gateway") {
+                const auto config = configuration::load_gateway(args[5]);
+                if (config.transport == configuration::Transport::wss) (void)security::make_tls_context(config.tls, true);
+            }
             else return usage(executable, false);
-            std::cout << "Configuration valid (milestone 1 local_tcp schema)\n";
+            std::cout << "Configuration valid\n";
             return 0;
         }
         std::string component(executable);
@@ -43,8 +50,12 @@ int execute(int argc, char** argv, std::string_view executable) {
             args.erase(args.begin(), args.begin() + 2);
         }
         if (args.size() != 2 || args[0] != "--config") return usage(executable, false);
-        if (component == "shadow-agent") return networking::run_agent(configuration::load_agent(args[1]));
-        return networking::run_gateway(configuration::load_gateway(args[1]));
+        if (component == "shadow-agent") {
+            const auto config = configuration::load_agent(args[1]);
+            return config.transport == configuration::Transport::wss ? networking::run_secure_agent(config) : networking::run_agent(config);
+        }
+        const auto config = configuration::load_gateway(args[1]);
+        return config.transport == configuration::Transport::wss ? networking::run_secure_gateway(config) : networking::run_gateway(config);
     } catch (const Error& error) {
         observability::log(observability::Level::error, executable, error.what());
         return 1;

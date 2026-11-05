@@ -1,22 +1,68 @@
-# Certificados TLS — especificação para M2
+# Certificados TLS — M2 implementado
 
-**Ainda não implementado.** O schema M1 rejeita `security`, `tls`, certificados
-e destinos remotos, evitando uma falsa impressão de criptografia habilitada.
+WSS exige OpenSSL 3.0+, TLS 1.3 como mínimo e máximo e mTLS obrigatório.
+O diagnóstico `local_tcp` continua rejeitando campos de credenciais e destinos
+externos; não há fallback automático de WSS para esse transporte.
 
-O M2 utilizará OpenSSL 3, mínimo e máximo TLS 1.3 no túnel e verificação
-obrigatória da cadeia e do hostname do gateway. O gateway exigirá certificado
-cliente emitido por uma CA de agentes confiável e verificará autorização por
-identidade. Certificados públicos de HTTPS e CA privada de agentes podem ser
-separados. Não haverá opção silenciosa de aceitar certificados inválidos.
+O Agent verifica cadeia X.509 estrita, validade, EKU `serverAuth` e identidade
+DNS/IP do Gateway. DNS utiliza SNI; IP literal é verificado contra SAN de IP.
+Wildcards parciais não são aceitos. O Gateway verifica cadeia, validade e EKU
+`clientAuth`, exige certificado cliente e confere seu fingerprint SHA-256 na
+allowlist. O HELLO precisa corresponder ao nome associado ao fingerprint.
+Certificados não são autorizados pelo CN autodeclarado. A CA de confiança do
+Gateway pode ser diferente da CA que emite seu próprio certificado público.
 
-Para testes, uma CA efêmera gerará certificados com SAN de DNS/IP adequado,
-EKU `serverAuth`/`clientAuth`, validade curta e chaves geradas pelo OpenSSL.
-Não usar a CA de laboratório em produção. No deploy, guardar chaves fora do
-repositório, com acesso apenas ao usuário do processo; a chave da CA deve
-permanecer fora do gateway. Permissões Unix e ACLs Windows serão verificadas
-conforme a plataforma. Definir rotação e revogação antes de operação pública.
+Sessões TLS não são retomadas; tickets e 0-RTT estão desabilitados. Profundidade
+máxima de cadeia: quatro intermediários; lista de certificados TLS: 32 KiB.
+Não há opção de ignorar cadeia, hostname, prazo de validade ou certificado cliente.
 
-Testes M2: CA errada, SAN incorreto, certificado expirado, ausência de certificado
-cliente, identidade sem autorização e protocolo TLS inferior. Nenhum desses
-testes existe ou foi declarado aprovado no M1. Não se deve importar uma CA de
-testes no trust store do sistema nem desabilitar validação para fazê-los passar.
+## Laboratório reproduzível
+
+```sh
+python scripts/dev-certificates.py
+shadow config validate --type gateway --config build/dev-pki/gateway.wss.yaml
+shadow gateway start --config build/dev-pki/gateway.wss.yaml
+# Outro terminal:
+shadow agent start --config build/dev-pki/agent.wss.yaml
+```
+
+O gerador usa OpenSSL CLI, EC P-256, CA descartável de dois dias, certificados
+com SAN e EKU e identificadores de chave. Escreve configurações com fingerprint
+real, sem editar templates ou trust stores. Recusa sobrescrever um diretório
+existente; para outra PKI, usar `--output build/outra-pki`. Seu arquivo de
+configuração OpenSSL é local, sem depender da instalação global. A CA privada
+é apenas de laboratório, fica em `build/` e nunca é montada no Gateway/Agent
+pelo Compose. Nunca versionar seus certificados privados ou chaves.
+
+## Credenciais de deploy
+
+Os caminhos `ca_file`, `certificate_file`, `private_key_file` são relativos ao
+YAML. Arquivos precisam ser regulares, legíveis e ter 1 B–1 MiB. O runtime e
+`shadow config validate` carregam os PEMs, verificam correspondência da chave,
+validade e propósito do certificado local antes de abrir sockets.
+
+No Unix, o arquivo de chave deve ter modo 0600/0400 ou mais restritivo; permissões
+para grupo/outros são rejeitadas. No Windows, a ACL deve restringir acesso ao
+usuário do processo; **inspeção automática de ACL ainda não foi implementada**.
+O software não altera ACLs existentes. PEM criptografado que exige senha interativa
+não é suportado: usar arquivos restritos sob uma conta de serviço dedicada.
+
+Calcular o fingerprint do **certificado leaf**, não de sua chave ou do arquivo
+PEM, e remover `:`/converter a saída para minúsculas:
+
+```sh
+openssl x509 -in agent.crt -noout -fingerprint -sha256
+```
+
+O YAML exige exatamente 64 caracteres hexadecimais minúsculos, com nomes e
+fingerprints únicos. Uma rotação exige atualizar o pin e reiniciar o Gateway.
+Nunca armazenar a chave da CA no Gateway ou na origem; manter CA offline ou usar
+um emissor apropriado. Não importar a CA de laboratório na confiança do sistema.
+
+## Limitações operacionais
+
+Não há CRL/OCSP, hot reload, cofre de segredos, rotação automática ou verificação
+periódica da validade durante uma sessão já estabelecida. Remover um pin e
+reiniciar o Gateway encerra sessões e bloqueia novos handshakes dessa identidade.
+Revogação/gerenciamento completos e auditoria pertencem ao M5. O certificado
+HTTPS de visitantes e a autorização de domínios serão tratados no M3/M5.

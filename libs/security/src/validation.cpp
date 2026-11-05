@@ -9,6 +9,11 @@ bool alnum(char c) noexcept {
 bool is_loopback(std::string_view value) noexcept {
     return value == "127.0.0.1" || value == "::1";
 }
+bool valid_fingerprint(std::string_view value) noexcept {
+    if (value.size() != 64) return false;
+    for (char c : value) if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return false;
+    return true;
+}
 bool valid_identifier(std::string_view value) noexcept {
     if (value.empty() || value.size() > 64) return false;
     for (char c : value) if (!alnum(c) && c != '-' && c != '_') return false;

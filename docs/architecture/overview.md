@@ -1,5 +1,36 @@
 # Arquitetura
 
+## Túnel seguro M2
+
+O módulo `security` provisiona contextos OpenSSL com TLS 1.3, mTLS, verificação
+X.509 estrita e identificação do peer por certificado. `configuration` valida
+schema, arquivos e permissões; `protocol/tunnel` serializa mensagens v2.
+`networking` separa a sessão SSL/WebSocket de seus controladores de Gateway e
+Agent. O Gateway registra identidades ativas e rejeita duplicação; o Agent
+controla reconexão com backoff e jitter. Ambos executam callbacks em uma thread
+de I/O, com deadlines, filas limitadas e buffers por sessão.
+
+```mermaid
+sequenceDiagram
+    participant A as Agent privado
+    participant G as Gateway
+    A->>G: TCP de saída + TLS 1.3/mTLS
+    G->>G: Validar cadeia, EKU e fingerprint autorizado
+    A->>A: Validar CA e hostname do Gateway
+    A->>G: Upgrade /shadow/tunnel/v2, subprotocolo shadownet.v2
+    A->>G: HELLO com nome autorizado
+    G-->>A: WELCOME com sessão aleatória e prazos
+    loop Enquanto conectado
+        A->>G: PING com contador
+        G-->>A: PONG com mesmo contador
+    end
+    Note over A,G: Falha provoca fechamento e nova conexão com backoff
+```
+
+OpenSSL 3.0+ e Beast já são dependências de runtime/build do M2. O transporte
+TCP local abaixo continua sendo um diagnóstico explícito; nunca é fallback.
+O proxy público e o registro de serviços permanecem planejados para M3.
+
 ## Escopo implementado no M1
 
 O transporte de diagnóstico usa TCP sobre um endereço literal de loopback.
@@ -43,8 +74,8 @@ Isso é contenção inicial; não equivale ao controle de fluxo do proxy futuro.
 | Catch2 3 | Testes unitários | Integração com CMake/CTest, sem framework próprio |
 | stdlib C++20 | RAII, erros, logging | Evita outra dependência para logs simples |
 | Python 3 | Integração de processos/sockets e API de exemplo | Não é dependência do runtime C++ |
-| Boost.Beast | HTTP/1.1 e WebSocket | Planejado para M2/M3, ainda não utilizado |
-| OpenSSL 3 | TLS 1.3 e mTLS | Planejado para M2; sem criptografia própria |
+| Boost.Beast | Upgrade HTTP/1.1 e WebSocket | Utilizado no WSS do M2; proxy HTTP no M3 |
+| OpenSSL 3.0+ | TLS 1.3 e mTLS | Utilizado no M2; sem criptografia própria |
 
 O bootstrap fixa versões e hashes; o modo de pacotes instalados delega versões
 ao operador. O build de produção futuro precisará de inventário/SBOM, política
