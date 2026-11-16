@@ -11,8 +11,8 @@ using Code = boost::system::error_code;
 using observability::Level;
 using observability::log;
 
-GatewayProxy::GatewayProxy(boost::asio::io_context& context, configuration::Gateway config)
-    : context_(context), config_(std::move(config)), limits_(config_.http.value_or(configuration::Https{})), tokens_(limits_.requests_per_second) {
+GatewayProxy::GatewayProxy(boost::asio::io_context& context, configuration::Gateway config, std::shared_ptr<observability::Metrics> metrics)
+    : context_(context), config_(std::move(config)), limits_(config_.http.value_or(configuration::Https{})), metrics_(std::move(metrics)), tokens_(limits_.requests_per_second) {
     for (const auto& agent : config_.authorized_agents) for (const auto& service : agent.services) authorized_hosts_.insert(service.hostname);
 }
 bool GatewayProxy::message(const std::shared_ptr<SecureSession>& session, const wire::Frame& frame) {
@@ -36,6 +36,7 @@ bool GatewayProxy::message(const std::shared_ptr<SecureSession>& session, const 
             routes_.emplace(service.hostname, Route{service.name, session, allowed->access});
         }
         log(Level::info, "gateway", "services_registered count=" + std::to_string(services.size()));
+        if (metrics_) metrics_->routes(routes_.size());
         return true;
     }
     if (frame.type != wire::Type::response || !registered_.contains(session.get())) return false;
@@ -65,6 +66,7 @@ CancelRequest GatewayProxy::dispatch(px::Request request, ProxyCompletion done) 
     }
     const auto session = route->second.session.lock();
     if (!session || pending_.size() >= limits_.max_in_flight || next_id_ == std::numeric_limits<std::uint64_t>::max()) {
+        if (metrics_ && pending_.size() >= limits_.max_in_flight) metrics_->event(observability::Event::in_flight_limit);
         done(px::error_response(0, 503)); return {};
     }
     request.id = ++next_id_;
@@ -103,6 +105,7 @@ void GatewayProxy::cancel(std::uint64_t id) {
 void GatewayProxy::disconnected(const std::shared_ptr<SecureSession>& session) {
     registered_.erase(session.get());
     std::erase_if(routes_, [&](const auto& entry) { return entry.second.session.lock() == session; });
+    if (metrics_) metrics_->routes(routes_.size());
     std::vector<std::uint64_t> failed;
     for (const auto& [id, pending] : pending_) if (pending.session.lock() == session) failed.push_back(id);
     for (const auto id : failed) complete(id, px::error_response(id, 503));
@@ -111,12 +114,13 @@ void GatewayProxy::stop() {
     if (stopped_) return;
     stopped_ = true;
     routes_.clear();
+    if (metrics_) metrics_->routes(0);
     std::vector<std::uint64_t> failed;
     for (const auto& [id, pending] : pending_) { (void)pending; failed.push_back(id); }
     for (const auto id : failed) complete(id, px::error_response(id, 503));
 }
-AgentProxy::AgentProxy(boost::asio::io_context& context, configuration::Agent config, Send send, std::shared_ptr<BufferBudget> budget)
-    : context_(context), config_(std::move(config)), send_(std::move(send)), budget_(std::move(budget)) {
+AgentProxy::AgentProxy(boost::asio::io_context& context, configuration::Agent config, Send send, std::shared_ptr<BufferBudget> budget, std::shared_ptr<observability::Metrics> metrics)
+    : context_(context), config_(std::move(config)), send_(std::move(send)), budget_(std::move(budget)), metrics_(std::move(metrics)) {
     for (const auto& service : config_.services) services_.push_back({service.name, service.hostname});
 }
 void AgentProxy::start() {
@@ -149,6 +153,8 @@ bool AgentProxy::message(const wire::Frame& frame) {
     // A conforming gateway has at most 64 pending requests. A small bounded
     // allowance for rejected requests keeps hostile peers from growing replies.
     if (requests_.size() >= 128) return false;
+    auto observation = metrics_ ? std::make_shared<observability::HttpObservation>(metrics_) : nullptr;
+    if (observation) observation->request_bytes(request.body.size());
     const auto service = std::find_if(config_.services.begin(), config_.services.end(), [&](const auto& value) { return value.name == request.service; });
     const auto reply = [&](unsigned status) {
         auto response = px::error_response(request.id, status);
@@ -156,7 +162,7 @@ bool AgentProxy::message(const wire::Frame& frame) {
             response.fields.emplace_back("content-length", std::to_string(response.body.size()));
             response.body.clear();
         }
-        requests_.emplace(request.id, Work{{}, {}, wire::Frame{wire::Type::response, px::encode_response(response)}});
+        requests_.emplace(request.id, Work{{}, {}, wire::Frame{wire::Type::response, px::encode_response(response)}, observation, status, response.body.size()});
         responses_.push_back(request.id);
         writable();
         return true;
@@ -166,9 +172,16 @@ bool AgentProxy::message(const wire::Frame& frame) {
     if (!security::allowed(service->access, request.method, request.target)) {
         log(Level::warning, "agent", "http_policy_denied"); return reply(403);
     }
-    if (requests_.size() >= config_.max_in_flight) return reply(503);
+    if (requests_.size() >= config_.max_in_flight) {
+        if (metrics_) metrics_->event(observability::Event::in_flight_limit);
+        return reply(503);
+    }
     auto reservation = budget_->acquire(4 * wire::max_message);
-    if (!reservation) return reply(503);
+    if (!reservation) {
+        if (metrics_) metrics_->event(observability::Event::buffer_limit);
+        return reply(503);
+    }
+    if (metrics_) metrics_->budget(observability::Budget::http, budget_->used(), budget_->peak(), budget_->capacity());
     const auto id = request.id;
     auto local = std::make_shared<LocalHttp>(context_, *service, std::move(request), config_.backend_timeout,
         [owner = weak_from_this(), id](const px::Response& response) {
@@ -177,11 +190,12 @@ bool AgentProxy::message(const wire::Frame& frame) {
                 if (found == agent->requests_.end()) return;
                 found->second.local.reset();
                 found->second.response = wire::Frame{wire::Type::response, px::encode_response(response)};
+                found->second.status = response.status; found->second.body_bytes = response.body.size();
                 agent->responses_.push_back(id);
                 agent->writable();
             }
         }, reservation);
-    requests_.emplace(id, Work{local, std::move(reservation), {}});
+    requests_.emplace(id, Work{local, std::move(reservation), {}, std::move(observation), 0, 0});
     local->start();
     return true;
 }
@@ -194,10 +208,14 @@ void AgentProxy::writable() {
         auto& response = found->second.response;
         if (!response) { responses_.pop_front(); continue; }
         if (!send_(*response)) {
-            if (!backpressured_) log(Level::info, "agent", "response_backpressure id=" + std::to_string(id));
+            if (!backpressured_) {
+                log(Level::info, "agent", "response_backpressure id=" + std::to_string(id));
+                if (metrics_) metrics_->event(observability::Event::backpressure);
+            }
             backpressured_ = true;
             return;
         }
+        if (found->second.observation) found->second.observation->finish(found->second.status, found->second.body_bytes);
         responses_.pop_front(); requests_.erase(found);
     }
     if (backpressured_) log(Level::info, "agent", "response_resumed");

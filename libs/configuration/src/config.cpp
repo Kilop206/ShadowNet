@@ -117,13 +117,24 @@ security::HttpPolicy policy(const YAML::Node& node) {
     security::validate_policy(result);
     return result;
 }
+std::optional<MetricsEndpoint> metrics(const YAML::Node& node) {
+    if (!node) return {};
+    keys(node, {"bind_host", "port", "max_connections", "timeout_ms"});
+    MetricsEndpoint result;
+    result.bind_host = scalar(node, "bind_host");
+    if (!security::is_loopback(result.bind_host)) throw Error("metrics bind_host must be literal loopback");
+    result.port = static_cast<std::uint16_t>(number(node, "port", {.min = 1, .max = 65535}));
+    if (node["max_connections"]) result.max_connections = number(node, "max_connections", {.min = 1, .max = 16});
+    if (node["timeout_ms"]) result.timeout = std::chrono::milliseconds(number(node, "timeout_ms", {.min = 100, .max = 10000}));
+    return result;
+}
 }
 Agent load_agent(const std::filesystem::path& path) {
     try {
         const auto root = document(path);
         const auto mode = transport(root);
         if (mode == Transport::local_tcp) keys(root, {"transport", "agent", "services"});
-        else keys(root, {"transport", "agent", "services", "security"});
+        else keys(root, {"transport", "agent", "services", "security", "metrics"});
         const auto node = root["agent"];
         if (mode == Transport::local_tcp) keys(node, {"name", "gateway_host", "port", "timeout_ms"});
         else keys(node, {"name", "gateway_host", "port", "timeout_ms", "reconnect", "max_in_flight", "backend_timeout_ms", "buffer_budget_bytes", "write_timeout_ms"});
@@ -164,6 +175,11 @@ Agent load_agent(const std::filesystem::path& path) {
                 result.services.push_back(std::move(value));
             }
         }
+        if (mode == Transport::wss) {
+            result.metrics = metrics(root["metrics"]);
+            if (result.metrics) for (const auto& service : result.services)
+                if (service.local_port == result.metrics->port) throw Error("a published service cannot target the metrics port");
+        }
         return result;
     } catch (const YAML::Exception&) {
         // yaml-cpp diagnostics may contain source text; do not expose secrets.
@@ -175,7 +191,7 @@ Gateway load_gateway(const std::filesystem::path& path) {
         const auto root = document(path);
         const auto mode = transport(root);
         if (mode == Transport::local_tcp) keys(root, {"transport", "gateway"});
-        else keys(root, {"transport", "gateway", "security", "authorized_agents", "http"});
+        else keys(root, {"transport", "gateway", "security", "authorized_agents", "http", "metrics"});
         const auto node = root["gateway"];
         if (mode == Transport::local_tcp) keys(node, {"bind_host", "port", "timeout_ms", "max_connections"});
         else keys(node, {"bind_host", "port", "timeout_ms", "max_connections", "heartbeat_interval_ms", "heartbeat_timeout_ms", "tunnel_buffer_budget_bytes", "write_timeout_ms"});
@@ -239,6 +255,9 @@ Gateway load_gateway(const std::filesystem::path& path) {
                 if (hostnames.empty()) throw Error("HTTPS requires at least one authorized service");
                 result.http = std::move(value);
             }
+            result.metrics = metrics(root["metrics"]);
+            if (result.metrics && (result.metrics->port == result.port || (result.http && result.metrics->port == result.http->port)))
+                throw Error("metrics and public tunnel or HTTPS ports must differ");
         }
         return result;
     } catch (const YAML::Exception&) {

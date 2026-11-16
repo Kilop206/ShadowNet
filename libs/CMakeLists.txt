@@ -10,7 +10,7 @@ if(WIN32)
   target_link_libraries(shadow_security PRIVATE advapi32)
 endif()
 
-add_library(shadow_observability observability/src/log.cpp)
+add_library(shadow_observability observability/src/log.cpp observability/src/metrics.cpp)
 target_include_directories(shadow_observability PUBLIC observability/include)
 target_link_libraries(shadow_observability PUBLIC shadow_core Threads::Threads)
 
@@ -23,7 +23,7 @@ target_include_directories(shadow_configuration PUBLIC configuration/include)
 target_link_libraries(shadow_configuration PUBLIC shadow_security PRIVATE yaml-cpp::yaml-cpp)
 
 add_library(shadow_networking networking/src/local_transport.cpp networking/src/secure_session.cpp networking/src/secure_transport.cpp
-  networking/src/https_server.cpp networking/src/local_http.cpp networking/src/proxy_router.cpp)
+  networking/src/https_server.cpp networking/src/local_http.cpp networking/src/proxy_router.cpp networking/src/metrics_server.cpp)
 target_include_directories(shadow_networking PUBLIC networking/include)
 target_link_libraries(shadow_networking PUBLIC shadow_configuration shadow_boost PRIVATE shadow_protocol shadow_observability Threads::Threads)
 target_compile_definitions(shadow_boost INTERFACE BOOST_ASIO_NO_DEPRECATED BOOST_ALL_NO_LIB)

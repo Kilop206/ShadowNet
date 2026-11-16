@@ -5,6 +5,7 @@ import secrets
 import socket
 import ssl
 import struct
+from contextlib import ExitStack
 
 
 def exact(sock, size):
@@ -53,19 +54,23 @@ class Peer:
         context = ssl.create_default_context(cafile=str(root / "ca.crt"))
         context.minimum_version = context.maximum_version = ssl.TLSVersion.TLSv1_3
         context.load_cert_chain(root / (profile + ".crt"), root / (profile + ".key"))
-        raw = socket.create_connection(("127.0.0.1", port), timeout=4)
-        sock = context.wrap_socket(raw, server_hostname="127.0.0.1")
-        key = base64.b64encode(secrets.token_bytes(16)).decode()
-        sock.sendall(("GET /shadow/tunnel/v3 HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
-                      f"Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Protocol: shadownet.v3\r\n\r\n").encode())
-        upgrade = header(sock)
-        assert b"101 Switching Protocols" in upgrade
-        expected = base64.b64encode(hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest())
-        assert expected in upgrade
-        peer = cls(sock)
-        peer.send(1, name.encode())
-        assert peer.receive()[0] == 2
-        return peer
+        with ExitStack() as cleanup:
+            raw = socket.create_connection(("127.0.0.1", port), timeout=4)
+            cleanup.callback(raw.close)
+            sock = context.wrap_socket(raw, server_hostname="127.0.0.1")
+            cleanup.callback(sock.close)
+            key = base64.b64encode(secrets.token_bytes(16)).decode()
+            sock.sendall(("GET /shadow/tunnel/v3 HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+                          f"Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Protocol: shadownet.v3\r\n\r\n").encode())
+            upgrade = header(sock)
+            assert b"101 Switching Protocols" in upgrade
+            expected = base64.b64encode(hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest())
+            assert expected in upgrade
+            peer = cls(sock)
+            peer.send(1, name.encode())
+            assert peer.receive()[0] == 2
+            cleanup.pop_all()
+            return peer
 
     @classmethod
     def accept(cls, sock):

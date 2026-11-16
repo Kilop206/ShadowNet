@@ -10,7 +10,7 @@
 namespace shadow::networking::detail {
 class GatewayProxy : public std::enable_shared_from_this<GatewayProxy> {
 public:
-    GatewayProxy(boost::asio::io_context& context, configuration::Gateway config);
+    GatewayProxy(boost::asio::io_context& context, configuration::Gateway config, std::shared_ptr<observability::Metrics> metrics = {});
     bool message(const std::shared_ptr<SecureSession>& session, const protocol::tunnel::Frame& frame);
     CancelRequest dispatch(protocol::proxy::Request request, ProxyCompletion done);
     void disconnected(const std::shared_ptr<SecureSession>& session);
@@ -28,6 +28,7 @@ private:
     boost::asio::io_context& context_;
     configuration::Gateway config_;
     configuration::Https limits_;
+    std::shared_ptr<observability::Metrics> metrics_;
     std::map<std::string, Route> routes_;
     std::set<const SecureSession*> registered_;
     std::set<std::string> authorized_hosts_;
@@ -40,7 +41,7 @@ private:
 class AgentProxy : public std::enable_shared_from_this<AgentProxy> {
 public:
     using Send = std::function<bool(const protocol::tunnel::Frame&)>;
-    AgentProxy(boost::asio::io_context& context, configuration::Agent config, Send send, std::shared_ptr<BufferBudget> budget);
+    AgentProxy(boost::asio::io_context& context, configuration::Agent config, Send send, std::shared_ptr<BufferBudget> budget, std::shared_ptr<observability::Metrics> metrics = {});
     void start();
     bool message(const protocol::tunnel::Frame& frame);
     void writable();
@@ -50,10 +51,14 @@ private:
     configuration::Agent config_;
     Send send_;
     std::shared_ptr<BufferBudget> budget_;
+    std::shared_ptr<observability::Metrics> metrics_;
     struct Work {
         std::shared_ptr<LocalHttp> local;
         std::shared_ptr<BufferBudget::Lease> reservation;
         std::optional<protocol::tunnel::Frame> response;
+        std::shared_ptr<observability::HttpObservation> observation;
+        unsigned status = 0;
+        std::size_t body_bytes = 0;
     };
     std::vector<protocol::proxy::Service> services_;
     std::map<std::uint64_t, Work> requests_;

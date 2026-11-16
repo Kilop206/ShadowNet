@@ -1,0 +1,71 @@
+{
+  "uid": "shadownet-overview",
+  "title": "ShadowNet — Gateway",
+  "tags": ["shadownet"],
+  "schemaVersion": 40,
+  "version": 1,
+  "refresh": "5s",
+  "timezone": "browser",
+  "time": {"from": "now-15m", "to": "now"},
+  "panels": [
+    {
+      "id": 1, "title": "Authenticated tunnels", "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "shadownet-prometheus"},
+      "gridPos": {"h": 5, "w": 6, "x": 0, "y": 0},
+      "targets": [{"expr": "shadownet_tunnels_active{job=\"shadownet-gateway\"}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "short"}},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "graphMode": "none"}
+    },
+    {
+      "id": 2, "title": "Published routes", "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "shadownet-prometheus"},
+      "gridPos": {"h": 5, "w": 6, "x": 6, "y": 0},
+      "targets": [{"expr": "shadownet_routes_active{job=\"shadownet-gateway\"}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "short"}},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "graphMode": "none"}
+    },
+    {
+      "id": 3, "title": "Agent state", "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "shadownet-prometheus"},
+      "gridPos": {"h": 5, "w": 12, "x": 12, "y": 0},
+      "targets": [{"expr": "shadownet_agent_up{job=\"shadownet-gateway\"}", "legendFormat": "{{agent}}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "short", "min": 0, "max": 1}},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "graphMode": "none"}
+    },
+    {
+      "id": 4, "title": "Requests per second", "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "shadownet-prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 5},
+      "targets": [{"expr": "rate(shadownet_http_requests_total{job=\"shadownet-gateway\"}[1m])", "legendFormat": "requests/s", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "reqps", "min": 0}}
+    },
+    {
+      "id": 5, "title": "p95 HTTP duration (completed and aborted)", "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "shadownet-prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 5},
+      "targets": [{"expr": "histogram_quantile(0.95, sum by (le) (rate(shadownet_http_request_duration_seconds_bucket{job=\"shadownet-gateway\"}[1m])))", "legendFormat": "p95", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "s", "min": 0}}
+    },
+    {
+      "id": 6, "title": "Tunnel payload throughput (TLS/WebSocket overhead excluded)", "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "shadownet-prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 13},
+      "targets": [{"expr": "rate(shadownet_tunnel_bytes_total{job=\"shadownet-gateway\"}[1m])", "legendFormat": "{{direction}}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "Bps", "min": 0}}
+    },
+    {
+      "id": 7, "title": "Completed HTTP responses per second", "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "shadownet-prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 13},
+      "targets": [{"expr": "sum by (status_class) (rate(shadownet_http_responses_total{job=\"shadownet-gateway\"}[1m]))", "legendFormat": "{{status_class}}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "reqps", "min": 0}}
+    },
+    {
+      "id": 8, "title": "Buffer admission reservations (not RSS)", "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "shadownet-prometheus"},
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 21},
+      "targets": [{"expr": "shadownet_buffer_used_bytes{job=\"shadownet-gateway\"}", "legendFormat": "{{scope}}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "bytes", "min": 0}}
+    }
+  ]
+}

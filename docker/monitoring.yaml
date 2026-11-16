@@ -1,0 +1,54 @@
+# Optional local monitoring overlay; generate a NEW PKI with --metrics first.
+services:
+  gateway:
+    ports:
+      - '127.0.0.1:9090:9090'
+  prometheus:
+    image: prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06
+    network_mode: service:gateway
+    depends_on: [gateway]
+    user: '${SHADOW_UID:-1000}:${SHADOW_GID:-1000}'
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=1h
+      - --web.listen-address=0.0.0.0:9090
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    tmpfs:
+      - '/prometheus:size=128m,mode=0700,uid=${SHADOW_UID:-1000},gid=${SHADOW_GID:-1000}'
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 256m
+    cpus: 1.0
+  grafana:
+    image: grafana/grafana:13.3.1@sha256:0615ec4fbd4072004b7d86b46ded63013a74b7d6eb1119273dd89e8fa25c13cf
+    depends_on: [prometheus]
+    user: '${SHADOW_UID:-1000}:${SHADOW_GID:-1000}'
+    ports:
+      - '127.0.0.1:3001:3000'
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
+      GF_AUTH_ANONYMOUS_ENABLED: 'false'
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+      GF_ANALYTICS_REPORTING_ENABLED: 'false'
+      GF_ANALYTICS_CHECK_FOR_UPDATES: 'false'
+      GF_LOG_MODE: console
+      GF_PLUGINS_PREINSTALL_DISABLED: 'true'
+    secrets: [grafana_admin_password]
+    volumes:
+      - ./monitoring/grafana/datasources.yaml:/etc/grafana/provisioning/datasources/shadownet.yaml:ro
+      - ./monitoring/grafana/dashboards.yaml:/etc/grafana/provisioning/dashboards/shadownet.yaml:ro
+      - ./monitoring/grafana/overview.json:/etc/grafana/dashboards/overview.json:ro
+    tmpfs:
+      - '/var/lib/grafana:size=128m,mode=0700,uid=${SHADOW_UID:-1000},gid=${SHADOW_GID:-1000}'
+      - /tmp:size=16m,mode=1777
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    cpus: 1.0
+secrets:
+  grafana_admin_password:
+    file: '${SHADOW_PKI_DIR:-../build/dev-pki}/grafana-admin-password'

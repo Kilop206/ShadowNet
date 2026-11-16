@@ -2,6 +2,7 @@
 #include <shadow/security/tls.hpp>
 #include <shadow/protocol/tunnel.hpp>
 #include <shadow/core/buffer_budget.hpp>
+#include <shadow/observability/metrics.hpp>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/ip/tcp.hpp>
 #include <chrono>
@@ -18,6 +19,7 @@ struct SessionOptions {
     std::chrono::milliseconds pong_timeout{3000};
     std::chrono::milliseconds write_timeout{10000};
     std::shared_ptr<BufferBudget::Lease> reservation;
+    std::shared_ptr<observability::Metrics> metrics;
     std::function<std::string(const std::string&)> authorize;
     std::function<bool(const std::string&)> claim;
     std::function<void()> ready;

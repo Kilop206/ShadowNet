@@ -29,6 +29,7 @@ for argument in ("agent", "gateway", "cli", "source", "openssl"):
 parser.add_argument("--load-seconds", type=float, default=float(os.environ.get("SHADOW_LOAD_SECONDS", "5")))
 parser.add_argument("--load-workers", type=int, default=int(os.environ.get("SHADOW_LOAD_WORKERS", "12")))
 parser.add_argument("--load-report", type=Path, default=Path("reliability-load.json"))
+parser.add_argument("--metrics-snapshot", type=Path, default=Path("metrics-sample.prom"))
 ARGS, TEST_ARGS = parser.parse_known_args()
 
 

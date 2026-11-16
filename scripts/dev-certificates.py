@@ -11,6 +11,7 @@ import shutil
 import ssl
 import subprocess
 import csv
+import secrets
 
 def windows_tool(name):
     return str(Path(os.environ.get("SystemRoot", "C:/Windows")) / "System32" / (name + ".exe"))
@@ -25,7 +26,7 @@ def restrict_key(path):
                     "/grant:r", "*S-1-5-18:F", "/grant:r", "*S-1-5-32-544:F"], capture_output=True, check=True, timeout=5)
 
 
-def generate(directory, openssl="openssl", test_fixtures=False):
+def generate(directory, openssl="openssl", test_fixtures=False, metrics=False):
     directory = Path(directory).resolve()
     directory.mkdir(parents=True, exist_ok=False)
     if os.name != "nt":
@@ -104,11 +105,19 @@ def generate(directory, openssl="openssl", test_fixtures=False):
         "transport: wss\ngateway:\n  bind_host: 127.0.0.1\n  port: 7443\n  timeout_ms: 3000\n  max_connections: 64\n"
         "  heartbeat_interval_ms: 1000\n  heartbeat_timeout_ms: 3000\n" + security.format(certificate="gateway") +
         "authorized_agents:\n  - name: home-server\n    certificate_sha256: " + fingerprint + "\n" + policy + public, encoding="utf-8")
+    if metrics:
+        for component, port in (("gateway", 9091), ("agent", 9092)):
+            path = directory / (component + ".wss.yaml")
+            path.write_text(path.read_text(encoding="utf-8") + f"metrics:\n  bind_host: 127.0.0.1\n  port: {port}\n", encoding="utf-8")
+        password = directory / "grafana-admin-password"
+        # Docker's shell entrypoint removes LF, but preserves CR from Windows CRLF.
+        password.write_bytes(secrets.token_urlsafe(32).encode("ascii"))
+        restrict_key(password)
     (directory / "agent.compose.yaml").write_text(
         (directory / "agent.wss.yaml").read_text(encoding="utf-8").replace("gateway_host: localhost", "gateway_host: gateway")
         .replace("private_key_file: agent.key", "private_key_file: private/leaf.key"), encoding="utf-8")
     (directory / "gateway.compose.yaml").write_text(
-        (directory / "gateway.wss.yaml").read_text(encoding="utf-8").replace("bind_host: 127.0.0.1", "bind_host: 0.0.0.0")
+        (directory / "gateway.wss.yaml").read_text(encoding="utf-8").replace("bind_host: 127.0.0.1", "bind_host: 0.0.0.0", 2)
         .replace("private_key_file: gateway.key", "private_key_file: private/leaf.key"), encoding="utf-8")
     return fingerprint
 
@@ -117,7 +126,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", default="build/dev-pki")
     parser.add_argument("--openssl", default="openssl")
+    parser.add_argument("--metrics", action="store_true", help="Enable local exporters and create a disposable Grafana admin password")
     options = parser.parse_args()
-    fingerprint = generate(options.output, options.openssl)
+    fingerprint = generate(options.output, options.openssl, metrics=options.metrics)
     print("Development certificates/configurations created in " + str(Path(options.output).resolve()))
     print("Agent certificate SHA-256: " + fingerprint)

@@ -34,6 +34,12 @@ struct Service {
     std::uint16_t local_port;
     security::HttpPolicy access;
 };
+struct MetricsEndpoint {
+    std::string bind_host;
+    std::uint16_t port = 9091;
+    std::size_t max_connections = 4;
+    std::chrono::milliseconds timeout{2000};
+};
 struct Agent {
     std::string name;
     std::string gateway_host;
@@ -47,6 +53,7 @@ struct Agent {
     std::chrono::milliseconds backend_timeout{3000};
     std::size_t buffer_budget_bytes = std::size_t{64} * 1024 * 1024;
     std::chrono::milliseconds write_timeout{10000};
+    std::optional<MetricsEndpoint> metrics;
 };
 struct Https {
     std::string bind_host;
@@ -71,6 +78,7 @@ struct Gateway {
     std::optional<Https> http;
     std::size_t tunnel_buffer_budget_bytes = std::size_t{128} * 1024 * 1024;
     std::chrono::milliseconds write_timeout{10000};
+    std::optional<MetricsEndpoint> metrics;
 };
 Agent load_agent(const std::filesystem::path& path);
 Gateway load_gateway(const std::filesystem::path& path);

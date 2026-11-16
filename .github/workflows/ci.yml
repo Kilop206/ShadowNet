@@ -1,4 +1,4 @@
-name: C++ security and reliable tunnel
+name: C++ security reliability and observability
 on: [push, pull_request, workflow_dispatch]
 permissions:
   contents: read
@@ -36,7 +36,9 @@ jobs:
         if: always()
         with:
           name: linux-${{ matrix.compiler }}-${{ matrix.sanitizers }}-load
-          path: build/bootstrap/tests/reliability-load.json
+          path: |
+            build/bootstrap/tests/reliability-load.json
+            build/bootstrap/tests/metrics-sample.prom
   windows-mingw:
     runs-on: windows-latest
     defaults:
@@ -61,4 +63,6 @@ jobs:
         if: always()
         with:
           name: windows-mingw-load
-          path: build/bootstrap/tests/reliability-load.json
+          path: |
+            build/bootstrap/tests/reliability-load.json
+            build/bootstrap/tests/metrics-sample.prom

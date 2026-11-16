@@ -37,6 +37,7 @@ public:
         ws_.set_option(websocket::stream_base::timeout{options_.timeout, websocket::stream_base::none(), false});
         request_.header_limit(8192);
         request_.body_limit(0);
+        if (options_.metrics) options_.metrics->tunnel_started();
     }
     void accept() {
         observe_close();
@@ -163,6 +164,7 @@ private:
                 return;
             }
             if (self->stopping_) return;
+            if (self->options_.metrics) self->options_.metrics->tunnel_bytes(false, self->read_buffer_.size());
             try {
                 if (!self->ws_.got_binary()) throw Error("text frames are forbidden");
                 const auto data = self->read_buffer_.data();
@@ -190,6 +192,7 @@ private:
                 options_.pong_timeout = welcome.timeout;
             }
             active_ = true;
+            if (options_.metrics) options_.metrics->tunnel_up(name_);
             ws_.read_message_max(wire::max_message);
             cancel_deadline();
             log(Level::info, options_.server ? "gateway" : "agent", "tunnel_established session=" + session_id_);
@@ -261,6 +264,7 @@ private:
             if (self->closed_) return;
             ++self->write_generation_; self->write_deadline_.cancel();
             if (error) { self->finish("tunnel_write_failed"); return; }
+            if (self->options_.metrics) self->options_.metrics->tunnel_bytes(true, bytes->size());
             self->outbox_.pop(); self->writing_ = false;
             if (!self->outbox_.empty()) self->write();
             else if (self->stopping_) self->close_websocket();
@@ -294,6 +298,7 @@ private:
     void finish(const std::string& reason) {
         if (closed_) return;
         closed_ = true;
+        if (options_.metrics) options_.metrics->tunnel_finished({active_, name_, reason});
         cancel_deadline();
         ++heartbeat_generation_;
         heartbeat_.cancel();

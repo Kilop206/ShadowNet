@@ -1,6 +1,7 @@
 #pragma once
 #include <shadow/configuration/config.hpp>
 #include <shadow/protocol/proxy.hpp>
+#include <shadow/observability/metrics.hpp>
 #include <boost/asio/io_context.hpp>
 #include <functional>
 #include <memory>
@@ -11,7 +12,7 @@ using CancelRequest = std::function<void()>;
 using Dispatch = std::function<CancelRequest(protocol::proxy::Request, ProxyCompletion)>;
 class HttpsServer {
 public:
-    HttpsServer(boost::asio::io_context& context, configuration::Https config, Dispatch dispatch);
+    HttpsServer(boost::asio::io_context& context, configuration::Https config, Dispatch dispatch, std::shared_ptr<observability::Metrics> metrics);
     ~HttpsServer();
     void start();
     void stop();

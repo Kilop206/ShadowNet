@@ -4,10 +4,12 @@
 #include <iostream>
 #include <mutex>
 #include <string>
+#include <atomic>
 
 namespace shadow::observability {
 namespace {
 std::mutex output_mutex;
+std::atomic<std::uint64_t> suppressed_total{0};
 std::string sanitize(std::string_view input) {
     std::string result;
     for (char c : input.substr(0, 512)) {
@@ -38,10 +40,11 @@ void log(Level level, std::string_view component, std::string_view event) {
         const auto now = std::chrono::steady_clock::now();
         tokens = std::min(400.0, tokens + std::chrono::duration<double>(now - previous).count() * 200);
         previous = now;
-        if (tokens < 1) { ++suppressed; return; }
+        if (tokens < 1) { ++suppressed; suppressed_total.fetch_add(1, std::memory_order_relaxed); return; }
         --tokens; dropped = suppressed; suppressed = 0;
     }
     if (dropped != 0) write_log(std::clog, Level::warning, "logging", "events_suppressed count=" + std::to_string(dropped));
     write_log(std::clog, level, component, event);
 }
+std::uint64_t suppressed_events() { return suppressed_total.load(std::memory_order_relaxed); }
 } // namespace shadow::observability

@@ -27,14 +27,15 @@ class Frontend : public std::enable_shared_from_this<Frontend> {
 public:
     using Admission = std::function<void(std::shared_ptr<Frontend>)>;
     Frontend(tcp::socket socket, std::shared_ptr<asio::ssl::context> tls, std::chrono::milliseconds timeout,
-        Dispatch dispatch, Admission admission, std::function<void()> done)
+        Dispatch dispatch, Admission admission, std::shared_ptr<observability::Metrics> metrics, std::function<void()> done)
         : tls_(std::move(tls)), stream_(std::move(socket), *tls_), timer_(stream_.get_executor()), credentials_(stream_.get_executor()),
-          timeout_(timeout), dispatch_(std::move(dispatch)), admission_(std::move(admission)), done_(std::move(done)) {
+          timeout_(timeout), dispatch_(std::move(dispatch)), admission_(std::move(admission)), metrics_(std::move(metrics)), done_(std::move(done)) {
         Code error;
         const auto endpoint = stream_.next_layer().remote_endpoint(error);
         if (!error) client_ip_ = endpoint.address().to_string();
         parser_.header_limit(static_cast<std::uint32_t>(px::max_headers));
         parser_.body_limit(px::max_body);
+        metrics_->https_connection(true);
     }
     void start() {
         arm(timeout_);
@@ -53,6 +54,8 @@ public:
     void stop() {
         if (closed_) return;
         closed_ = true;
+        if (observation_) observation_->finish(0, 0);
+        metrics_->https_connection(false);
         ++timer_generation_;
         timer_.cancel();
         credentials_.cancel();
@@ -98,6 +101,7 @@ private:
     }
     void parse_error(Code error) {
         if (error == http::error::end_of_stream || error == asio::error::operation_aborted) { stop(); return; }
+        if (!observation_) observation_ = std::make_unique<observability::HttpObservation>(metrics_);
         respond(px::error_response(0, error == http::error::body_limit ? 413 : error == http::error::header_limit ? 431 : 400));
     }
     px::Fields fields() const {
@@ -106,6 +110,7 @@ private:
         return result;
     }
     void header() {
+        observation_ = std::make_unique<observability::HttpObservation>(metrics_);
         auto& request = parser_.get();
         method_ = std::string(request.method_string());
         if (request.version() != 11) { respond(px::error_response(0, 505)); return; }
@@ -134,6 +139,7 @@ private:
             if (error) { self->parse_error(error); return; }
             try {
                 auto message = self->parser_.release();
+                self->observation_->request_bytes(message.body().size());
                 px::Fields fields;
                 for (const auto& field : message.base()) fields.emplace_back(px::lower(field.name_string()), std::string(field.value()));
                 px::Request request{0, "", std::string(message.method_string()), std::string(message.target()),
@@ -168,6 +174,7 @@ private:
             auto written = [self = shared_from_this()](Code error, std::size_t) {
                 if (self->closed_) return;
                 if (error) { self->stop(); return; }
+                if (self->observation_) self->observation_->finish(self->response_->result_int(), self->response_->body().size());
                 self->arm(std::chrono::milliseconds(1000));
                 self->stream_.async_shutdown([self](Code) { self->stop(); });
             };
@@ -181,6 +188,8 @@ private:
     std::chrono::milliseconds timeout_;
     Dispatch dispatch_;
     Admission admission_;
+    std::shared_ptr<observability::Metrics> metrics_;
+    std::unique_ptr<observability::HttpObservation> observation_;
     std::shared_ptr<BufferBudget::Lease> reservation_;
     std::function<void()> done_;
     CancelRequest cancel_;
@@ -196,8 +205,8 @@ private:
 }
 class HttpsServer::Impl : public std::enable_shared_from_this<Impl> {
 public:
-    Impl(asio::io_context& context, configuration::Https config, Dispatch dispatch)
-        : context_(context), config_(std::move(config)), tls_(security::make_https_context(config_.tls)), acceptor_(context), dispatch_(std::move(dispatch)), budget_(config_.buffer_budget_bytes) {
+    Impl(asio::io_context& context, configuration::Https config, Dispatch dispatch, std::shared_ptr<observability::Metrics> metrics)
+        : context_(context), config_(std::move(config)), tls_(security::make_https_context(config_.tls)), acceptor_(context), dispatch_(std::move(dispatch)), budget_(config_.buffer_budget_bytes), metrics_(std::move(metrics)) {
         const tcp::endpoint endpoint(asio::ip::make_address(config_.bind_host), config_.port);
         acceptor_.open(endpoint.protocol());
 #ifndef _WIN32
@@ -206,6 +215,7 @@ public:
         acceptor_.bind(endpoint); acceptor_.listen(static_cast<int>(config_.max_connections));
     }
     void start() {
+        metrics_->budget(observability::Budget::http, budget_.used(), budget_.peak(), budget_.capacity());
         budget_.on_release([owner = weak_from_this()] {
             if (const auto server = owner.lock()) asio::post(server->context_, [owner] {
                 if (const auto current = owner.lock()) current->drain();
@@ -230,23 +240,29 @@ private:
             auto frontend = waiting_.front().lock(); waiting_.pop_front();
             if (frontend) frontend->admitted(std::move(reservation));
         }
+        metrics_->budget(observability::Budget::http, budget_.used(), budget_.peak(), budget_.capacity());
     }
     void admit(const std::shared_ptr<Frontend>& frontend) {
         waiting_.push_back(frontend);
         drain();
-        if (!waiting_.empty()) observability::log(observability::Level::info, "gateway", "http_buffer_wait");
+        if (!waiting_.empty()) {
+            metrics_->event(observability::Event::buffer_limit);
+            observability::log(observability::Level::info, "gateway", "http_buffer_wait");
+        }
     }
     void accept() {
         acceptor_.async_accept([self = shared_from_this()](Code error, tcp::socket socket) {
             if (self->stopping_) return;
             if (error) throw Error("HTTPS listener failed");
-            if (self->sessions_.size() >= self->config_.max_connections) { Code ignored; socket.close(ignored); }
+            if (self->sessions_.size() >= self->config_.max_connections) {
+                Code ignored; socket.close(ignored); self->metrics_->event(observability::Event::connection_limit);
+            }
             else {
                 auto holder = std::make_shared<std::weak_ptr<Frontend>>();
                 auto session = std::make_shared<Frontend>(std::move(socket), self->tls_, self->config_.timeout, self->dispatch_,
                     [owner = std::weak_ptr<Impl>(self)](const std::shared_ptr<Frontend>& frontend) {
                         if (const auto server = owner.lock()) server->admit(frontend);
-                    },
+                    }, self->metrics_,
                     [owner = std::weak_ptr<Impl>(self), holder] {
                         if (const auto server = owner.lock()) if (const auto frontend = holder->lock()) server->sessions_.erase(frontend);
                     });
@@ -261,12 +277,13 @@ private:
     tcp::acceptor acceptor_;
     Dispatch dispatch_;
     BufferBudget budget_;
+    std::shared_ptr<observability::Metrics> metrics_;
     std::list<std::weak_ptr<Frontend>> waiting_;
     std::unordered_set<std::shared_ptr<Frontend>> sessions_;
     bool stopping_ = false;
 };
-HttpsServer::HttpsServer(asio::io_context& context, configuration::Https config, Dispatch dispatch)
-    : impl_(std::make_shared<Impl>(context, std::move(config), std::move(dispatch))) {}
+HttpsServer::HttpsServer(asio::io_context& context, configuration::Https config, Dispatch dispatch, std::shared_ptr<observability::Metrics> metrics)
+    : impl_(std::make_shared<Impl>(context, std::move(config), std::move(dispatch), std::move(metrics))) {}
 HttpsServer::~HttpsServer() = default;
 void HttpsServer::start() { impl_->start(); }
 void HttpsServer::stop() { impl_->stop(); }

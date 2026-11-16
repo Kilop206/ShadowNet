@@ -1,4 +1,4 @@
-add_executable(shadow-unit unit/foundation.cpp unit/tunnel.cpp unit/proxy.cpp unit/reliability.cpp unit/security.cpp unit/agent_proxy.cpp)
+add_executable(shadow-unit unit/foundation.cpp unit/tunnel.cpp unit/proxy.cpp unit/reliability.cpp unit/security.cpp unit/agent_proxy.cpp unit/metrics.cpp)
 target_link_libraries(shadow-unit PRIVATE shadow_protocol shadow_configuration shadow_observability Catch2::Catch2WithMain)
 target_link_libraries(shadow-unit PRIVATE shadow_networking)
 target_include_directories(shadow-unit PRIVATE "${PROJECT_SOURCE_DIR}/libs/networking/src")
@@ -34,3 +34,9 @@ add_test(NAME e2e.security
     --agent $<TARGET_FILE:shadow-agent> --gateway $<TARGET_FILE:shadow-gateway>
     --cli $<TARGET_FILE:shadow> --source "${PROJECT_SOURCE_DIR}" --openssl "${SHADOW_OPENSSL_EXECUTABLE}")
 set_tests_properties(e2e.security PROPERTIES TIMEOUT 180)
+add_test(NAME e2e.metrics
+  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/e2e/metrics.py"
+    --agent $<TARGET_FILE:shadow-agent> --gateway $<TARGET_FILE:shadow-gateway>
+    --cli $<TARGET_FILE:shadow> --source "${PROJECT_SOURCE_DIR}" --openssl "${SHADOW_OPENSSL_EXECUTABLE}"
+    --metrics-snapshot "${CMAKE_CURRENT_BINARY_DIR}/metrics-sample.prom")
+set_tests_properties(e2e.metrics PROPERTIES TIMEOUT 120)
