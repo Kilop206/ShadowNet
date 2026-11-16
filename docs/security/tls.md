@@ -1,4 +1,7 @@
-# Certificados TLS — M2 implementado
+# Certificados TLS — M2 a M5
+
+O [guia de produção](production.md) descreve políticas, CRL local, pin de
+rotação e revalidação durante sessões. O formato do túnel continua v3.
 
 No M3 há contextos separados: WSS v3 mantém mTLS; HTTPS público usa certificado
 de servidor e não exige certificado cliente. Ambos requerem TLS 1.3. O leaf
@@ -50,10 +53,14 @@ YAML. Arquivos precisam ser regulares, legíveis e ter 1 B–1 MiB. O runtime e
 `shadow config validate` carregam os PEMs, verificam correspondência da chave,
 validade e propósito do certificado local antes de abrir sockets.
 
-No Unix, o arquivo de chave deve ter modo 0600/0400 ou mais restritivo; permissões
-para grupo/outros são rejeitadas. No Windows, a ACL deve restringir acesso ao
-usuário do processo; **inspeção automática de ACL ainda não foi implementada**.
-O software não altera ACLs existentes. PEM criptografado que exige senha interativa
+Chaves têm teto de 64 KiB, precisam ser arquivos regulares e ter um único link.
+No Unix, permissões de grupo/outros são rejeitadas. No Windows, proprietário e
+DACL são inspecionados; usuário do processo, SYSTEM e Administradores são
+confiados. Concessões de leitura/escrita/controle a outros SIDs são rejeitadas,
+mesmo se houver ACE de negação (análise conservadora). ACEs não suportadas e
+DACL nula falham fechadas. O runtime não altera ACLs existentes. O gerador,
+invocado explicitamente, restringe somente as chaves descartáveis que cria.
+PEM criptografado que exige senha interativa
 não é suportado: usar arquivos restritos sob uma conta de serviço dedicada.
 
 Calcular o fingerprint do **certificado leaf**, não de sua chave ou do arquivo
@@ -64,14 +71,17 @@ openssl x509 -in agent.crt -noout -fingerprint -sha256
 ```
 
 O YAML exige exatamente 64 caracteres hexadecimais minúsculos, com nomes e
-fingerprints únicos. Uma rotação exige atualizar o pin e reiniciar o Gateway.
+fingerprints únicos. `certificate_sha256_next` permite sobreposição temporária
+de dois pins para a mesma identidade durante uma rotação com reinício controlado.
 Nunca armazenar a chave da CA no Gateway ou na origem; manter CA offline ou usar
 um emissor apropriado. Não importar a CA de laboratório na confiança do sistema.
 
 ## Limitações operacionais
 
-Não há CRL/OCSP, hot reload, cofre de segredos, rotação automática ou verificação
-periódica da validade durante uma sessão já estabelecida. Remover um pin e
-reiniciar o Gateway encerra sessões e bloqueia novos handshakes dessa identidade.
-Revogação/gerenciamento completos e auditoria pertencem ao M5. O certificado
-HTTPS de visitantes e a autorização de domínios serão tratados no M3/M5.
+CRL local configurada é obrigatória para a validação daquela cadeia, com
+checagem de toda a cadeia. CRL ausente/expirada/inválida não é ignorada.
+Sessões WSS revalidam cadeia peer, propósito, identidade e validade a cada
+segundo; o leaf local também é revalidado, inclusive em HTTPS público.
+Não há OCSP, hot reload, cofre ou rotação automática. Remover um pin/atualizar
+CRL requer reinício; interromper o processo encerra sessões antigas. Não há
+revogação instantânea a partir da simples alteração de um arquivo em disco.

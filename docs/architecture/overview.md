@@ -1,5 +1,14 @@
 # Arquitetura
 
+## Segurança M5
+
+`security` fornece políticas HTTP compartilhadas e inspeção de chaves/cadeia
+X.509; `configuration` valida regras/pins/CRLs. `GatewayProxy` e `AgentProxy`
+aplicam as próprias políticas, sem receber destinos arbitrários no protocolo.
+`SecureSession` revalida credenciais periodicamente; `HttpsServer` acompanha
+o leaf local. Contextos de confiança/pins são imutáveis até reinício explícito.
+Detalhes operacionais: [segurança de produção](../security/production.md).
+
 ## Confiabilidade M4
 
 O formato de mensagens continua v3. [Controle de recursos](reliability.md)

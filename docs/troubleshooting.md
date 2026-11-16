@@ -1,5 +1,20 @@
 # Troubleshooting
 
+## Segurança M5
+
+| Evento/sintoma | Verificação |
+|---|---|
+| 403 / `http_policy_denied` | Conferir método e prefixo nos dois lados; query não participa da ACL |
+| 400 após migração | Verificar traversal, `;`, barras duplicadas e escapes reservados no path |
+| `credential_validation_failed` | Certificado/cadeia ou CRL expirou durante a sessão; renovar e reiniciar o validador |
+| `TLS credentials or context are invalid` | Também conferir DACL/permissões, links da chave e validade/formato da CRL; erros detalhados são omitidos para proteger contexto local |
+| Pin próximo negado | SHA-256 do leaf, não chave/PEM; pin único e HELLO com a mesma identidade |
+| CRL mudou mas sessão continua | Arquivos são carregados no início; distribuir/reiniciar conforme o guia, sem esperar hot reload |
+| `events_suppressed` | Emissão de logs excedeu o teto global; há perda deliberada de eventos, sem trilha completa de acesso |
+
+Procedimentos: [segurança e rotação](security/production.md). Não remover
+checagens de certificado/permissão para contornar um deploy incorreto.
+
 ## Recursos do M4
 
 | Evento/sintoma | Interpretação e ação |

@@ -1,5 +1,24 @@
 # Configuração
 
+## Segurança do M5
+
+`services[].access` (Agent) e `authorized_agents[].services[].access` (Gateway)
+aceitam `methods` e `path_prefixes`, listas de 1–16 valores únicos. O default
+é GET/HEAD/POST/PUT/PATCH/DELETE/OPTIONS em `/`. Prefixos comparam segmentos,
+não queries; métodos adicionais exigem autorização explícita. As duas
+políticas são aplicadas independentemente. Ver [semântica e exemplos](security/production.md).
+
+No `security` WSS, `crl_file` é opcional, relativo ao YAML e limitado a 1 MiB.
+Se presente, CRLs válidas da cadeia são obrigatórias; falta/erro não desativa a
+checagem. HTTPS público não aceita `crl_file`, pois não autentica visitantes por mTLS.
+`authorized_agents[].certificate_sha256_next` é um segundo pin opcional para
+rotação da mesma identidade; ambos os pins precisam ser únicos entre identidades.
+Não muda o limite de uma sessão por identidade.
+
+O M5 exige chave regular de até 64 KiB, um único hard link e permissões
+Unix/DACL Windows restritas. Caminhos HTTP ambíguos e certos escapes antes
+aceitos passam a retornar 400; revisar aplicações ao migrar M4 → M5.
+
 ## Recursos opcionais do M4 (somente WSS)
 
 | Campo | Default | Intervalo |

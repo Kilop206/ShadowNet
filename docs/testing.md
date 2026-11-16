@@ -38,7 +38,7 @@ cmake --build --preset bootstrap --parallel 4
 ```
 
 No Windows, o LLVM separado pode não descobrir os includes do MinGW. Para
-analisar as dezessete unidades de produção com a toolchain local:
+analisar as dezenove unidades de produção com a toolchain local:
 
 ```powershell
 ./scripts/check-static.ps1 -BuildDir build/mingw -MingwRoot C:/mingw64
@@ -113,4 +113,20 @@ No Linux: `SHADOW_LOAD_SECONDS=30 SHADOW_LOAD_WORKERS=16 ctest --preset bootstra
 O teste aceita 4–300 s e 4–32 workers. O deadline CTest é 420 s.
 Esses números medem somente o host de teste, sem promessa de capacidade de
 produção ou medição de WAN/NAT/CGNAT. Resultados executados: `milestones/m4.md`.
-Revogação, rotação automática e auditoria externa seguem no M5.
+## Segurança do M5
+
+`e2e.security` exercita 16 cenários com processos e certificados reais: política
+nos dois lados, bypass de path, schema inválido, sobreposição de pin, CRL válida,
+revogada nos dois sentidos, expirada, estrangeira, malformada, ausente e com
+assinatura adulterada e tentativa de injetar CA no bundle CRL. Valida expiração durante sessão ativa, hard links e
+permissões locais; Unix também testa symlink, Windows testa DACL com Everyone.
+
+Catch2 acrescenta política/canonicalização, 5000 mutações determinísticas do
+protocolo e flood de logging. O corpus não substitui fuzzing contínuo; roda
+também com ASan/UBSan no CI. Não há segredo real nas fixtures nem CA instalada
+no sistema. O gerador explicitamente restringe suas novas chaves via chmod/icacls.
+Ambientes Windows que bloqueiam WRITE_DAC precisam executar a geração/testes
+sob a conta autorizada a proteger esses arquivos; não relaxar a DACL.
+
+Resultados executados e limitações: [M5](milestones/m5.md). OCSP, rotação
+automática/hot reload e auditoria externa não fazem parte dessa entrega.

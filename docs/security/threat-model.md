@@ -1,5 +1,23 @@
 # Modelo de ameaças inicial
 
+## Revisão e controles do M5
+
+Políticas de método/caminho por serviço são aplicadas no Gateway e no Agent;
+prefixos respeitam segmentos e o parser rejeita normalizações ambíguas antes
+da origem. A autorização por fingerprint permanece vinculada a uma identidade,
+mesmo durante sobreposição de pins para rotação.
+
+CRL local opcional é verificada sem fallback quando configurada. Sessões WSS
+revalidam certificados/cadeia/propósito/identidade e validade da CRL a cada
+segundo. Chaves privadas têm limite, restrição de links e inspeção de permissões
+Unix/DACL Windows. Logs omitem dados HTTP sensíveis e têm limite de emissão.
+
+Os [controles e a revisão interna](production.md) mapeiam ameaças a testes.
+Não se presume proteção contra operador/administrador comprometido, aplicação
+vulnerável, troca de arquivos por quem controla diretórios pais ou exaustão
+fora dos orçamentos de buffers. Alterar CRL/pins exige reiniciar os validadores;
+não há consulta de revogação em rede, hot reload ou auditoria externa.
+
 ## Disponibilidade no M4
 
 Além de limites de conexão/corpo/headers, há admissão global por reservas RAII,
@@ -11,8 +29,8 @@ Esses controles são exercitados com recebedores lentos e interrupção de proce
 
 São limites de disponibilidade, sem promessa de proteção total contra DoS ou
 de teto exato de RSS. Custos de TLS, kernel, allocators e logs precisam de
-dimensionamento operacional. Revogação/ciclo de certificados e auditoria
-aprofundada continuam no M5. Ver [confiabilidade](../architecture/reliability.md).
+dimensionamento operacional. A revisão interna do M5 não substitui avaliação
+externa do deploy. Ver [confiabilidade](../architecture/reliability.md).
 
 ## Fronteiras adicionais do M3
 

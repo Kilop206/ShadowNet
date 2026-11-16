@@ -7,14 +7,21 @@
 - O protocolo WSS é v3, incompatível com M2/v2; atualizar ambos os binários juntos.
 - Não há status persistido, comando stop, dashboard, Prometheus ou serviço de sistema.
 - Um único event loop por processo; não foi feito benchmark de throughput de proxy.
-- Limites iniciais não são proteção completa contra DoS; logs não têm rate limit
-  ou rotação interna. Usar supervisão externa apenas quando apropriado.
+- Limites não são proteção completa contra DoS; logs têm limite global de emissão
+  e podem suprimir eventos, sem rotação/persistência internas. Não são trilha de auditoria completa.
 - O hostname de serviço aceita apenas DNS ASCII minúsculo; não há normalização IDN.
 - Não existe detecção de vazamentos do IP em conteúdo/DNS da própria aplicação.
 - Binários Windows dependem dos runtimes MinGW/OpenSSL no PATH; pacotes distribuíveis são M7.
-- Sem CRL/OCSP, hot reload de credenciais/pins, rotação automática ou cofre de segredos.
-- Não há revalidação de expiração em sessões existentes; remover pin exige reinício do Gateway.
-- Chaves Unix exigem 0600/0400; ACL Windows é responsabilidade do administrador, sem inspeção automática.
+- CRL local é opcional e carregada no início; sem download automático/OCSP,
+  hot reload de credenciais/pins, rotação automática ou cofre de segredos.
+- Sessões WSS revalidam credenciais a cada segundo; remover pin ou atualizar CRL
+  exige reinício controlado. O agendador/relógio do SO limitam a precisão temporal.
+- Chaves Unix exigem 0600/0400; DACL Windows é inspecionada conservadoramente.
+  Chaves não podem ter symlink final ou mais de um hard link. Diretórios pais
+  e a conta do processo precisam de proteção administrativa contra troca de arquivos.
+- Políticas de método/caminho não autenticam visitantes. Caminhos ambíguos e
+  percent-encoding de caracteres reservados/Unicode no path são rejeitados;
+  aplicações que precisam desses formatos exigem adaptação. Queries não são ACLs.
 - Sem prompt para PEM criptografado. A CA privada deve permanecer fora dos hosts do túnel.
 - Uma identidade aceita uma sessão; múltiplas instâncias da mesma identidade não fazem balanceamento.
 - Há E2E HTTPS real com dois serviços e concorrência. Não houve validação física de NAT/CGNAT ou carga de produção.
