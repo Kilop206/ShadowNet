@@ -28,7 +28,7 @@ public:
     using Admission = std::function<void(std::shared_ptr<Frontend>)>;
     Frontend(tcp::socket socket, std::shared_ptr<asio::ssl::context> tls, std::chrono::milliseconds timeout,
         Dispatch dispatch, Admission admission, std::function<void()> done)
-        : tls_(std::move(tls)), stream_(std::move(socket), *tls_), timer_(stream_.get_executor()),
+        : tls_(std::move(tls)), stream_(std::move(socket), *tls_), timer_(stream_.get_executor()), credentials_(stream_.get_executor()),
           timeout_(timeout), dispatch_(std::move(dispatch)), admission_(std::move(admission)), done_(std::move(done)) {
         Code error;
         const auto endpoint = stream_.next_layer().remote_endpoint(error);
@@ -41,6 +41,8 @@ public:
         stream_.async_handshake(asio::ssl::stream_base::server, [self = shared_from_this()](Code error) {
             if (self->closed_) return;
             if (error) { self->stop(); return; }
+            if (!security::credentials_current(self->stream_.native_handle(), false, true)) { self->stop(); return; }
+            self->check_credentials();
             http::async_read_header(self->stream_, self->buffer_, self->parser_, [self](Code read_error, std::size_t) {
                 if (self->closed_) return;
                 if (read_error) { self->parse_error(read_error); return; }
@@ -53,6 +55,7 @@ public:
         closed_ = true;
         ++timer_generation_;
         timer_.cancel();
+        credentials_.cancel();
         if (cancel_) { auto cancel = std::move(cancel_); cancel(); }
         Code ignored;
         stream_.next_layer().shutdown(tcp::socket::shutdown_both, ignored);
@@ -78,6 +81,14 @@ public:
         } else read_body();
     }
 private:
+    void check_credentials() {
+        credentials_.expires_after(std::chrono::seconds(1));
+        credentials_.async_wait([self = shared_from_this()](Code error) {
+            if (error || self->closed_) return;
+            if (!security::credentials_current(self->stream_.native_handle(), false, true)) { self->stop(); return; }
+            self->check_credentials();
+        });
+    }
     void arm(std::chrono::milliseconds timeout) {
         const auto generation = ++timer_generation_;
         timer_.expires_after(timeout);
@@ -166,7 +177,7 @@ private:
     }
     std::shared_ptr<asio::ssl::context> tls_;
     asio::ssl::stream<tcp::socket> stream_;
-    asio::steady_timer timer_;
+    asio::steady_timer timer_, credentials_;
     std::chrono::milliseconds timeout_;
     Dispatch dispatch_;
     Admission admission_;

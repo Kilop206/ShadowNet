@@ -31,7 +31,10 @@ bool GatewayProxy::message(const std::shared_ptr<SecureSession>& session, const 
         }
         if (!session->transmit({wire::Type::registered, frame.payload})) return false;
         registered_.insert(session.get());
-        for (const auto& service : services) routes_.emplace(service.hostname, Route{service.name, session});
+        for (const auto& service : services) {
+            const auto allowed = std::find_if(agent->services.begin(), agent->services.end(), [&](const auto& entry) { return entry.name == service.name; });
+            routes_.emplace(service.hostname, Route{service.name, session, allowed->access});
+        }
         log(Level::info, "gateway", "services_registered count=" + std::to_string(services.size()));
         return true;
     }
@@ -57,6 +60,9 @@ CancelRequest GatewayProxy::dispatch(px::Request request, ProxyCompletion done) 
     if (!authorized_hosts_.contains(host)) { done(px::error_response(0, 404)); return {}; }
     const auto route = routes_.find(host);
     if (route == routes_.end()) { done(px::error_response(0, 503)); return {}; }
+    if (!security::allowed(route->second.access, request.method, request.target)) {
+        log(Level::warning, "gateway", "http_policy_denied"); done(px::error_response(0, 403)); return {};
+    }
     const auto session = route->second.session.lock();
     if (!session || pending_.size() >= limits_.max_in_flight || next_id_ == std::numeric_limits<std::uint64_t>::max()) {
         done(px::error_response(0, 503)); return {};
@@ -157,6 +163,9 @@ bool AgentProxy::message(const wire::Frame& frame) {
     };
     if (service == config_.services.end()) return reply(404);
     if (px::hostname(px::single_field(request.fields, "host")) != service->hostname) return reply(403);
+    if (!security::allowed(service->access, request.method, request.target)) {
+        log(Level::warning, "agent", "http_policy_denied"); return reply(403);
+    }
     if (requests_.size() >= config_.max_in_flight) return reply(503);
     auto reservation = budget_->acquire(4 * wire::max_message);
     if (!reservation) return reply(503);

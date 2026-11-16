@@ -1,5 +1,6 @@
 #pragma once
 #include <shadow/security/credentials.hpp>
+#include <shadow/security/policy.hpp>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -18,17 +19,20 @@ struct Reconnect {
 struct PublishedService {
     std::string name;
     std::string hostname;
+    security::HttpPolicy access;
 };
 struct AuthorizedAgent {
     std::string name;
     std::string certificate_sha256;
     std::vector<PublishedService> services;
+    std::string certificate_sha256_next;
 };
 struct Service {
     std::string name;
     std::string hostname;
     std::string local_host;
     std::uint16_t local_port;
+    security::HttpPolicy access;
 };
 struct Agent {
     std::string name;

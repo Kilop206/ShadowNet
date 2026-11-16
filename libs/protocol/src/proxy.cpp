@@ -1,6 +1,7 @@
 #include <shadow/protocol/proxy.hpp>
 #include <shadow/core/error.hpp>
 #include <shadow/security/validation.hpp>
+#include <shadow/security/policy.hpp>
 #include <charconv>
 #include <set>
 #include <limits>
@@ -109,6 +110,7 @@ void validate_target(std::string_view method, std::string_view target) {
     require(method.size() <= 32 && token(method) && method != "CONNECT" && method != "TRACE");
     require(!target.empty() && target.size() <= 8192 && (target.front() == '/' || (method == "OPTIONS" && target == "*")));
     for (const auto c : target) require(c > 32 && static_cast<unsigned char>(c) < 127 && c != '#');
+    (void)security::canonical_path(target);
 }
 std::string hostname(std::string_view authority) {
     const auto colon = authority.find(':');

@@ -13,9 +13,11 @@ security:
   ca_file: certs/agents-ca.crt
   certificate_file: certs/gateway.crt
   private_key_file: certs/gateway.key
+  # crl_file: certs/agents-ca.crl.pem
 authorized_agents:
   - name: home-server
     certificate_sha256: REPLACE_WITH_LOWERCASE_64_HEX_CERTIFICATE_SHA256
+    # certificate_sha256_next: REPLACE_WITH_NEXT_CERTIFICATE_SHA256
     services:
       - {name: api, hostname: api.example.com}
       - {name: website, hostname: app.example.com}

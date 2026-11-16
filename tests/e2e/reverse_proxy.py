@@ -75,6 +75,7 @@ class ProxyHarness(unittest.TestCase):
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         module.generate(cls.root, ARGS.openssl, test_fixtures=True)
+        cls.pki = module
         cls.api = Backend("api")
         cls.addClassCleanup(cls.api.stop)
         cls.website = Backend("website")

@@ -30,7 +30,7 @@ class SecureSession::Impl : public std::enable_shared_from_this<Impl> {
 public:
     Impl(tcp::socket socket, std::shared_ptr<asio::ssl::context> tls, SessionOptions options)
         : tls_(std::move(tls)), ws_(std::move(socket), *tls_), resolver_(ws_.get_executor()),
-          deadline_(ws_.get_executor()), heartbeat_(ws_.get_executor()), write_deadline_(ws_.get_executor()), options_(std::move(options)), name_(options_.name) {
+          deadline_(ws_.get_executor()), heartbeat_(ws_.get_executor()), write_deadline_(ws_.get_executor()), credentials_(ws_.get_executor()), options_(std::move(options)), name_(options_.name) {
         ws_.read_message_max(wire::control_message);
         ws_.write_buffer_bytes(16384);
         ws_.binary(true);
@@ -94,6 +94,10 @@ private:
                 self->finish("tls_handshake_failed"); return;
             }
             try {
+                if (!security::credentials_current(self->ws_.next_layer().native_handle(), true, self->options_.server)) {
+                    self->finish("credential_validation_failed"); return;
+                }
+                self->check_credentials();
                 const auto fingerprint = security::peer_fingerprint(self->ws_.next_layer().native_handle());
                 if (self->options_.server) {
                     self->name_ = self->options_.authorize(fingerprint);
@@ -101,6 +105,16 @@ private:
                     self->read_upgrade();
                 } else self->upgrade_client();
             } catch (const Error&) { self->finish("peer_verification_failed"); }
+        });
+    }
+    void check_credentials() {
+        credentials_.expires_after(std::chrono::seconds(1));
+        credentials_.async_wait([self = shared_from_this()](Code error) {
+            if (error || self->closed_) return;
+            if (!security::credentials_current(self->ws_.next_layer().native_handle(), true, self->options_.server)) {
+                self->finish("credential_validation_failed"); return;
+            }
+            self->check_credentials();
         });
     }
     void read_upgrade() {
@@ -284,6 +298,7 @@ private:
         ++heartbeat_generation_;
         heartbeat_.cancel();
         ++write_generation_; write_deadline_.cancel();
+        credentials_.cancel();
         outbox_.clear();
         resolver_.cancel();
         Code ignored;
@@ -298,7 +313,7 @@ private:
     std::shared_ptr<asio::ssl::context> tls_;
     websocket::stream<beast::ssl_stream<beast::tcp_stream>, false> ws_;
     tcp::resolver resolver_;
-    asio::steady_timer deadline_, heartbeat_, write_deadline_;
+    asio::steady_timer deadline_, heartbeat_, write_deadline_, credentials_;
     SessionOptions options_;
     std::string name_, host_, authority_, session_id_;
     beast::flat_buffer read_buffer_{wire::max_message};

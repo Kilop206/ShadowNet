@@ -17,11 +17,15 @@ security:
   ca_file: certs/gateway-ca.crt
   certificate_file: certs/agent.crt
   private_key_file: certs/agent.key
+  # crl_file: certs/gateway-ca.crl.pem
 services:
   - name: api
     hostname: api.example.com
     local_host: 127.0.0.1
     local_port: 8080
+    access:
+      methods: [GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS]
+      path_prefixes: [/]
   - name: website
     hostname: app.example.com
     local_host: 127.0.0.1

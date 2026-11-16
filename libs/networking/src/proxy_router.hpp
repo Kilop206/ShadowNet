@@ -16,7 +16,7 @@ public:
     void disconnected(const std::shared_ptr<SecureSession>& session);
     void stop();
 private:
-    struct Route { std::string service; std::weak_ptr<SecureSession> session; };
+    struct Route { std::string service; std::weak_ptr<SecureSession> session; security::HttpPolicy access; };
     struct Pending {
         std::weak_ptr<SecureSession> session;
         ProxyCompletion done;

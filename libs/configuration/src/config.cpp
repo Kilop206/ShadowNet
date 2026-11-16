@@ -77,7 +77,7 @@ bool ip_address(const std::string& value) {
     return !error;
 }
 security::TlsFiles tls_files(const YAML::Node& node, const std::filesystem::path& config_path, bool mutual = true) {
-    if (mutual) keys(node, {"ca_file", "certificate_file", "private_key_file"});
+    if (mutual) keys(node, {"ca_file", "certificate_file", "private_key_file", "crl_file"});
     else keys(node, {"certificate_file", "private_key_file"});
     const auto resolve = [&](const char* key) {
         auto path = std::filesystem::path(scalar(node, key));
@@ -91,11 +91,30 @@ security::TlsFiles tls_files(const YAML::Node& node, const std::filesystem::path
         return path;
     };
     security::TlsFiles result{mutual ? resolve("ca_file") : std::filesystem::path{}, resolve("certificate_file"), resolve("private_key_file")};
+    if (mutual && node["crl_file"]) result.crl_file = resolve("crl_file");
 #ifndef _WIN32
     const auto permissions = std::filesystem::status(result.private_key_file).permissions();
     constexpr auto forbidden = std::filesystem::perms::group_all | std::filesystem::perms::others_all;
     if ((permissions & forbidden) != std::filesystem::perms::none) throw Error("private key permissions must be 0600 or stricter");
 #endif
+    return result;
+}
+security::HttpPolicy policy(const YAML::Node& node) {
+    security::HttpPolicy result;
+    if (!node) return result;
+    keys(node, {"methods", "path_prefixes"});
+    const auto list = [&](const char* key, std::vector<std::string>& output) {
+        if (!node[key]) return;
+        const auto values = node[key];
+        if (!values.IsSequence() || values.size() == 0 || values.size() > 16) throw Error("invalid access policy list");
+        output.clear();
+        for (const auto& value : values) {
+            if (!value.IsScalar()) throw Error("invalid access policy value");
+            output.push_back(value.as<std::string>());
+        }
+    };
+    list("methods", result.methods); list("path_prefixes", result.path_prefixes);
+    security::validate_policy(result);
     return result;
 }
 }
@@ -135,11 +154,12 @@ Agent load_agent(const std::filesystem::path& path) {
             if (!services.IsSequence() || services.size() > 32) throw Error("services must be a sequence of at most 32 entries");
             std::set<std::string> names, hostnames;
             for (const auto& service : services) {
-                keys(service, {"name", "hostname", "local_host", "local_port"});
+                keys(service, {"name", "hostname", "local_host", "local_port", "access"});
                 Service value{scalar(service, "name"), scalar(service, "hostname"), scalar(service, "local_host"),
                     static_cast<std::uint16_t>(number(service, "local_port", {.min = 1, .max = 65535}))};
                 if (!security::valid_identifier(value.name) || !security::valid_hostname(value.hostname)) throw Error("invalid service name or hostname");
                 loopback(value.local_host);
+                value.access = policy(service["access"]);
                 if (!names.insert(value.name).second || !hostnames.insert(value.hostname).second) throw Error("duplicate service name or hostname");
                 result.services.push_back(std::move(value));
             }
@@ -177,18 +197,24 @@ Gateway load_gateway(const std::filesystem::path& path) {
             if (!agents.IsSequence() || agents.size() == 0 || agents.size() > 1024) throw Error("authorized_agents requires 1 to 1024 entries");
             std::set<std::string> names, fingerprints, hostnames;
             for (const auto& agent : agents) {
-                keys(agent, {"name", "certificate_sha256", "services"});
+                keys(agent, {"name", "certificate_sha256", "certificate_sha256_next", "services"});
                 AuthorizedAgent value{scalar(agent, "name"), scalar(agent, "certificate_sha256"), {}};
                 if (!security::valid_identifier(value.name) || !security::valid_fingerprint(value.certificate_sha256))
                     throw Error("invalid agent identity or fingerprint");
                 if (!names.insert(value.name).second || !fingerprints.insert(value.certificate_sha256).second)
                     throw Error("duplicate authorized identity");
+                if (agent["certificate_sha256_next"]) {
+                    value.certificate_sha256_next = scalar(agent, "certificate_sha256_next");
+                    if (!security::valid_fingerprint(value.certificate_sha256_next) || !fingerprints.insert(value.certificate_sha256_next).second)
+                        throw Error("invalid or duplicate rotation fingerprint");
+                }
                 if (const auto services = agent["services"]) {
                     if (!services.IsSequence() || services.size() > 32) throw Error("authorized services must contain at most 32 entries");
                     std::set<std::string> service_names;
                     for (const auto& service : services) {
-                        keys(service, {"name", "hostname"});
+                        keys(service, {"name", "hostname", "access"});
                         PublishedService entry{scalar(service, "name"), scalar(service, "hostname")};
+                        entry.access = policy(service["access"]);
                         if (!security::valid_identifier(entry.name) || !security::valid_hostname(entry.hostname) ||
                             !service_names.insert(entry.name).second || !hostnames.insert(entry.hostname).second)
                             throw Error("invalid or duplicate authorized service");

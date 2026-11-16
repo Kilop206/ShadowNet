@@ -1,4 +1,4 @@
-add_executable(shadow-unit unit/foundation.cpp unit/tunnel.cpp unit/proxy.cpp unit/reliability.cpp)
+add_executable(shadow-unit unit/foundation.cpp unit/tunnel.cpp unit/proxy.cpp unit/reliability.cpp unit/security.cpp)
 target_link_libraries(shadow-unit PRIVATE shadow_protocol shadow_configuration shadow_observability Catch2::Catch2WithMain)
 target_compile_definitions(shadow-unit PRIVATE SHADOW_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 add_test(NAME unit.foundation COMMAND shadow-unit)
@@ -27,3 +27,8 @@ add_test(NAME e2e.reliability
     --cli $<TARGET_FILE:shadow> --source "${PROJECT_SOURCE_DIR}" --openssl "${SHADOW_OPENSSL_EXECUTABLE}"
     --load-report "${CMAKE_CURRENT_BINARY_DIR}/reliability-load.json")
 set_tests_properties(e2e.reliability PROPERTIES TIMEOUT 420)
+add_test(NAME e2e.security
+  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/e2e/security.py"
+    --agent $<TARGET_FILE:shadow-agent> --gateway $<TARGET_FILE:shadow-gateway>
+    --cli $<TARGET_FILE:shadow> --source "${PROJECT_SOURCE_DIR}" --openssl "${SHADOW_OPENSSL_EXECUTABLE}")
+set_tests_properties(e2e.security PROPERTIES TIMEOUT 180)

@@ -10,6 +10,19 @@ from pathlib import Path
 import shutil
 import ssl
 import subprocess
+import csv
+
+def windows_tool(name):
+    return str(Path(os.environ.get("SystemRoot", "C:/Windows")) / "System32" / (name + ".exe"))
+
+def restrict_key(path):
+    if os.name != "nt":
+        path.chmod(0o600)
+        return
+    identity = subprocess.run([windows_tool("whoami"), "/user", "/fo", "csv", "/nh"], capture_output=True, text=True, errors="replace", check=True, timeout=5)
+    sid = next(csv.reader(identity.stdout.splitlines()))[1]
+    subprocess.run([windows_tool("icacls"), str(path), "/inheritance:r", "/grant:r", "*" + sid + ":F",
+                    "/grant:r", "*S-1-5-18:F", "/grant:r", "*S-1-5-32-544:F"], capture_output=True, check=True, timeout=5)
 
 
 def generate(directory, openssl="openssl", test_fixtures=False):
@@ -74,8 +87,7 @@ def generate(directory, openssl="openssl", test_fixtures=False):
                 "-startdate", "20000101000000Z", "-enddate", "20000102000000Z", "-extensions", extension)
             shutil.copyfile(directory / (csr + ".key"), directory / (name + ".key"))
     for key in directory.glob("*.key"):
-        if os.name != "nt":
-            key.chmod(0o600)
+        restrict_key(key)
     fingerprint = hashlib.sha256(ssl.PEM_cert_to_DER_cert((directory / "agent.crt").read_text(encoding="ascii"))).hexdigest()
     security = "security:\n  ca_file: ca.crt\n  certificate_file: {certificate}.crt\n  private_key_file: {certificate}.key\n"
     services = ("services:\n  - name: api\n    hostname: api.example.test\n    local_host: 127.0.0.1\n    local_port: 8080\n"

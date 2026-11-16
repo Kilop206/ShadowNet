@@ -3,9 +3,12 @@ target_include_directories(shadow_core INTERFACE core/include)
 target_compile_definitions(shadow_core INTERFACE SHADOW_VERSION="${PROJECT_VERSION}")
 target_link_libraries(shadow_core INTERFACE shadow_options)
 
-add_library(shadow_security security/src/validation.cpp security/src/tls.cpp)
+add_library(shadow_security security/src/validation.cpp security/src/tls.cpp security/src/policy.cpp security/src/credentials.cpp)
 target_include_directories(shadow_security PUBLIC security/include)
 target_link_libraries(shadow_security PUBLIC shadow_core shadow_boost OpenSSL::SSL OpenSSL::Crypto)
+if(WIN32)
+  target_link_libraries(shadow_security PRIVATE advapi32)
+endif()
 
 add_library(shadow_observability observability/src/log.cpp)
 target_include_directories(shadow_observability PUBLIC observability/include)

@@ -26,6 +26,22 @@ void write_log(std::ostream& output, Level level, std::string_view component, st
            << " event=" << sanitize(event) << '\n' << std::flush;
 }
 void log(Level level, std::string_view component, std::string_view event) {
+    // Bound process-wide log amplification. write_log remains an unthrottled
+    // formatter for explicit sinks/tests; runtime events never contain payloads.
+    static std::mutex limiter_mutex;
+    static auto previous = std::chrono::steady_clock::now();
+    static double tokens = 400;
+    static std::size_t suppressed = 0;
+    std::size_t dropped = 0;
+    {
+        std::lock_guard lock(limiter_mutex);
+        const auto now = std::chrono::steady_clock::now();
+        tokens = std::min(400.0, tokens + std::chrono::duration<double>(now - previous).count() * 200);
+        previous = now;
+        if (tokens < 1) { ++suppressed; return; }
+        --tokens; dropped = suppressed; suppressed = 0;
+    }
+    if (dropped != 0) write_log(std::clog, Level::warning, "logging", "events_suppressed count=" + std::to_string(dropped));
     write_log(std::clog, level, component, event);
 }
 } // namespace shadow::observability

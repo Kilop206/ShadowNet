@@ -20,6 +20,7 @@ void require(bool success) { if (!success) throw Error("TLS configuration failed
 enum class Role : std::uint8_t { agent, gateway, https };
 std::shared_ptr<boost::asio::ssl::context> make_context(const TlsFiles& files, Role role) {
     try {
+        check_private_key(files.private_key_file);
         namespace ssl = boost::asio::ssl;
         const bool server = role != Role::agent;
         auto context = std::make_shared<ssl::context>(server ? ssl::context::tls_server : ssl::context::tls_client);
@@ -34,6 +35,23 @@ std::shared_ptr<boost::asio::ssl::context> make_context(const TlsFiles& files, R
         require(X509_VERIFY_PARAM_set_flags(SSL_CTX_get0_param(handle), X509_V_FLAG_X509_STRICT) == 1);
         context->set_password_callback([](std::size_t, ssl::context::password_purpose) { return std::string{}; });
         if (role != Role::https) context->load_verify_file(files.ca_file.string());
+        if (!files.crl_file.empty()) {
+            auto* store = SSL_CTX_get_cert_store(handle);
+            auto* lookup = X509_STORE_add_lookup(store, X509_LOOKUP_file());
+            // A CRL bundle must never introduce additional trusted CA certificates.
+            require(lookup != nullptr && X509_load_crl_file(lookup, files.crl_file.string().c_str(), X509_FILETYPE_PEM) > 0);
+            const auto* objects = X509_STORE_get0_objects(store);
+            bool found = false;
+            for (int i = 0; i < sk_X509_OBJECT_num(objects); ++i) {
+                const auto* object = sk_X509_OBJECT_value(objects, i);
+                if (X509_OBJECT_get_type(object) != X509_LU_CRL) continue;
+                const auto* crl = X509_OBJECT_get0_X509_CRL(object);
+                require(X509_CRL_get0_nextUpdate(crl) != nullptr &&
+                    X509_cmp_current_time(X509_CRL_get0_lastUpdate(crl)) < 0 && X509_cmp_current_time(X509_CRL_get0_nextUpdate(crl)) > 0);
+                found = true;
+            }
+            require(found && X509_STORE_set_flags(store, X509_V_FLAG_CRL_CHECK | X509_V_FLAG_CRL_CHECK_ALL) == 1);
+        }
         context->use_certificate_chain_file(files.certificate_file.string());
         context->use_private_key_file(files.private_key_file.string(), ssl::context::pem);
         require(SSL_CTX_check_private_key(handle) == 1);
@@ -75,6 +93,17 @@ std::string peer_fingerprint(SSL* stream) {
     unsigned length = 0;
     require(X509_digest(certificate.get(), EVP_sha256(), digest.data(), &length) == 1 && length == 32);
     return hex(std::span(digest).first(length));
+}
+bool credentials_current(SSL* stream, bool mutual, bool server) {
+    const auto* local = SSL_get_certificate(stream);
+    if (!local || X509_cmp_current_time(X509_get0_notBefore(local)) >= 0 || X509_cmp_current_time(X509_get0_notAfter(local)) <= 0) return false;
+    if (!mutual) return true;
+    std::unique_ptr<X509, decltype(&X509_free)> peer(SSL_get1_peer_certificate(stream), X509_free);
+    std::unique_ptr<X509_STORE_CTX, decltype(&X509_STORE_CTX_free)> verify(X509_STORE_CTX_new(), X509_STORE_CTX_free);
+    if (!peer || !verify || X509_STORE_CTX_init(verify.get(), SSL_CTX_get_cert_store(SSL_get_SSL_CTX(stream)), peer.get(), SSL_get_peer_cert_chain(stream)) != 1) return false;
+    if (X509_STORE_CTX_set_default(verify.get(), server ? "ssl_client" : "ssl_server") != 1 ||
+        X509_VERIFY_PARAM_inherit(X509_STORE_CTX_get0_param(verify.get()), SSL_get0_param(stream)) != 1) return false;
+    return X509_verify_cert(verify.get()) == 1;
 }
 std::string random_session_id() {
     std::array<unsigned char, 16> bytes{};

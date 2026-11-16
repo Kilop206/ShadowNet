@@ -89,7 +89,7 @@ private:
         options.authorize = [owner](const std::string& fingerprint) {
             if (const auto gateway = owner.lock()) {
                 for (const auto& agent : gateway->config_.authorized_agents)
-                    if (agent.certificate_sha256 == fingerprint) return agent.name;
+                    if (agent.certificate_sha256 == fingerprint || agent.certificate_sha256_next == fingerprint) return agent.name;
             }
             return std::string{};
         };

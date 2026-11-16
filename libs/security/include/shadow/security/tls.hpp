@@ -9,5 +9,6 @@ std::shared_ptr<boost::asio::ssl::context> make_tls_context(const TlsFiles& file
 std::shared_ptr<boost::asio::ssl::context> make_https_context(const TlsFiles& files);
 void verify_server_identity(SSL* stream, const std::string& host);
 std::string peer_fingerprint(SSL* stream);
+bool credentials_current(SSL* stream, bool mutual, bool server);
 std::string random_session_id();
 } // namespace shadow::security

@@ -1,4 +1,4 @@
-name: C++ reliable tunnel
+name: C++ security and reliable tunnel
 on: [push, pull_request, workflow_dispatch]
 permissions:
   contents: read
