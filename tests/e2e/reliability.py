@@ -157,20 +157,31 @@ class Reliability(ProxyHarness):
             for identifier in range(1, 13):
                 peer.send(8, wire_request(identifier, "api", "api.example.test", target=f"/large?id={identifier}"))
             agent.wait_log("response_backpressure")
-            cancelled = int(re.search(r"response_backpressure id=(\d+)", agent.log())[1])
-            peer.send(10, struct.pack("!Q", cancelled))
-            agent.wait_log(f"response_cancelled id={cancelled}")
+            # The first blocked reply can enter the OS send buffer between the
+            # log and CANCEL. Cancellation is best effort after enqueue. Cancel
+            # the batch, then use a later response as a FIFO completion barrier;
+            # start reading immediately so heartbeats cannot deadlock the test.
+            for identifier in range(1, 13):
+                peer.send(10, struct.pack("!Q", identifier))
+            peer.send(8, wire_request(13, "api", "api.example.test"))
             received = set()
-            for _ in range(11):
+            for _ in range(13):
                 kind, payload = peer.data()
                 self.assertEqual(kind, 9)
                 identifier, status = struct.unpack("!QH", payload[:10])
                 self.assertEqual(status, 200)
+                if identifier == 13:
+                    self.assertTrue(payload.endswith(b"hello-api"))
+                    break
                 self.assertNotIn(identifier, received)
-                self.assertNotEqual(identifier, cancelled)
+                self.assertIn(identifier, range(1, 13))
                 self.assertIn(f"/large?id={identifier}:api:".encode(), payload)
                 received.add(identifier)
-            self.assertEqual(received, set(range(1, 13)) - {cancelled})
+            else:
+                self.fail("missing completion barrier response")
+            cancelled = {int(value) for value in re.findall(r"response_cancelled id=(\d+)", agent.log())}
+            self.assertTrue(received, "the active immutable frame must still arrive")
+            self.assertTrue(received.isdisjoint(cancelled), "a cancelled deferred reply was sent")
             agent.wait_log("response_resumed")
             self.assertIsNone(agent.process.poll())
             self.assertEqual(agent.log().count("tunnel_established"), 1)

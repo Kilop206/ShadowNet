@@ -1,5 +1,7 @@
-add_executable(shadow-unit unit/foundation.cpp unit/tunnel.cpp unit/proxy.cpp unit/reliability.cpp unit/security.cpp)
+add_executable(shadow-unit unit/foundation.cpp unit/tunnel.cpp unit/proxy.cpp unit/reliability.cpp unit/security.cpp unit/agent_proxy.cpp)
 target_link_libraries(shadow-unit PRIVATE shadow_protocol shadow_configuration shadow_observability Catch2::Catch2WithMain)
+target_link_libraries(shadow-unit PRIVATE shadow_networking)
+target_include_directories(shadow-unit PRIVATE "${PROJECT_SOURCE_DIR}/libs/networking/src")
 target_compile_definitions(shadow-unit PRIVATE SHADOW_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 add_test(NAME unit.foundation COMMAND shadow-unit)
 set_tests_properties(unit.foundation PROPERTIES TIMEOUT 30)

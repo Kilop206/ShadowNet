@@ -141,6 +141,7 @@ persistência, rotação, assinatura ou garantia de registrar todos os acessos.
 | Chave local | Restrição Unix e DACL Windows, com teste negativo de leitura pública |
 | Amplificação de logs | Burst de 5000 eventos em teste; ausência de segredos em negativa HTTP |
 | Recursos e isolamento | Regressões M1–M4: buffers, timeouts, sessões/IDs, perda e recuperação |
+| CANCEL sob pressão | Remetente bloqueado em teste determinístico; E2E com barreira FIFO e cancelamento best effort |
 
 O corpus de mutação é smoke testing, não campanha contínua de fuzzing. O CI
 também executa ASan/UBSan e clang-tidy. Revogar aplicação/usuário HTTP continua

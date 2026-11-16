@@ -127,6 +127,10 @@ também com ASan/UBSan no CI. Não há segredo real nas fixtures nem CA instalad
 no sistema. O gerador explicitamente restringe suas novas chaves via chmod/icacls.
 Ambientes Windows que bloqueiam WRITE_DAC precisam executar a geração/testes
 sob a conta autorizada a proteger esses arquivos; não relaxar a DACL.
+Há teste determinístico do AgentProxy com remetente sem capacidade, cobrindo
+cancelamento de resposta adiada, retomada e limite de rejeições pendentes.
+O peer E2E usa uma resposta posterior como barreira, sem supor que CANCEL
+possa remover uma resposta que já entrou na escrita.
 
 Resultados executados e limitações: [M5](milestones/m5.md). OCSP, rotação
 automática/hot reload e auditoria externa não fazem parte dessa entrega.
