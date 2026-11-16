@@ -3,7 +3,7 @@
 Infraestrutura de túnel reverso para publicar serviços privados por um gateway
 público. C++20, CMake e bibliotecas independentes. Licença MIT.
 
-**Estado atual: Milestone 5 — Production Security, versão 0.5.0.** O Gateway
+**Estado atual: Milestone 6 — Observability, versão 0.6.0.** O Gateway
 recebe HTTPS, autoriza hostnames e encaminha HTTP/1.1 por WSS/TLS 1.3/mTLS até
 serviços fixos no Agent. Há registro de serviços, IDs de requisição, isolamento
 concorrente, heartbeat, reconexão, deadlines e limites de recursos.
@@ -12,6 +12,9 @@ corpos HTTP, respostas adiadas sob backpressure e prazo de escrita no túnel.
 O M5 adiciona políticas HTTP por serviço nos dois lados, CRLs locais opcionais,
 revalidação de certificados em sessões ativas, inspeção de chaves Unix/DACL
 Windows e limites de emissão de logs. O formato de rede permanece v3.
+O M6 exporta métricas Prometheus por listener local opcional nos dois processos:
+conexões, agentes, latência, tráfego, erros e reservas de buffers. O laboratório
+opcional inclui Prometheus e Grafana com oito painéis e senha gerada.
 O diagnóstico TCP local do M1 permanece separado e restrito a loopback.
 
 O objetivo futuro é impedir a exposição direta do IP da origem aos visitantes.
@@ -154,3 +157,5 @@ O protocolo do túnel é v3; atualizar Agent e Gateway juntos ao migrar do M2.
 - [Relatório do M4](docs/milestones/m4.md)
 - [Controles de segurança e operação](docs/security/production.md)
 - [Relatório do M5](docs/milestones/m5.md)
+- [Métricas, PromQL e laboratório Grafana](docs/observability.md)
+- [Relatório do M6](docs/milestones/m6.md)

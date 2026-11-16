@@ -57,3 +57,10 @@ WebSocket de aplicações ou keep-alive público. CANCEL não desfaz efeitos de
 POST; não há replay automático. Uso crítico exige M4/M5 e validação própria.
 Expor o IP de origem em DNS, redirects ou conteúdo da aplicação continuará sendo
 um risco mesmo com o túnel funcionando.
+
+No M6, o coletor Prometheus pode ser instalado no mesmo host do Gateway e usar
+`metrics.bind_host: 127.0.0.1`; não abrir essa porta na VPS. Coleta do Agent exige
+coletor local próprio ou transporte administrativo autorizado, sem publicar
+seu exporter como serviço. O overlay Grafana é laboratório descartável;
+produção precisa de retenção, atualização e administração próprias.
+Veja [observabilidade](../observability.md).

@@ -1,5 +1,22 @@
 # Modelo de ameaças inicial
 
+## Superfície de métricas do M6
+
+Exporter desabilitado por padrão, restrito a IP literal de loopback e a porta
+separada. Rejeita Host externo, Origin, corpo e métodos além de GET/HEAD;
+limita header/buffer/resposta, conexões e prazo total. Não possui autenticação:
+outros processos no mesmo host/namespace podem ler nomes configurados e estado
+operacional. O bloqueio de Host/Origin reduz uso por navegadores; não isola um
+adversário local. O Agent rejeita publicar a própria porta de métricas.
+
+Labels não incluem paths, queries, hosts de serviços, IPs, pins, IDs ou headers;
+identidades vêm somente da configuração (até 1024). Não criar novos labels com
+entrada remota. Prometheus/Grafana são componentes opcionais externos com seu
+próprio ciclo de atualização e controle de acesso. O laboratório limita portas
+ao loopback do host e exige senha Grafana gerada; Prometheus não é autenticado.
+Não expor essas portas por roteador, túnel ou proxy público. Ver
+[operação e limitações](../observability.md).
+
 ## Revisão e controles do M5
 
 Políticas de método/caminho por serviço são aplicadas no Gateway e no Agent;

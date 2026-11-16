@@ -1,5 +1,25 @@
 # Configuração
 
+## Métricas opcionais do M6
+
+Em Agent/Gateway WSS, a seção raiz `metrics` habilita um listener local separado.
+Sem a seção, não há porta de métricas. Não é aceita em `local_tcp`.
+
+```yaml
+metrics:
+  bind_host: 127.0.0.1
+  port: 9091
+  max_connections: 4
+  timeout_ms: 2000
+```
+
+`bind_host` e `port` são obrigatórios: somente `127.0.0.1` ou `::1`, porta
+1–65535. `max_connections` aceita 1–16 (default 4); `timeout_ms`, 100–10000
+(default 2000), prazo total de leitura/escrita. A porta do Gateway deve diferir
+de WSS/HTTPS; no Agent, deve diferir das portas dos serviços publicados,
+inclusive se usarem outra família de loopback. Bind ocupado falha ao iniciar;
+validação offline não reserva sockets. Veja [semântica e coleta](observability.md).
+
 ## Segurança do M5
 
 `services[].access` (Agent) e `authorized_agents[].services[].access` (Gateway)

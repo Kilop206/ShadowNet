@@ -1,4 +1,10 @@
 # Template: generate working laboratory configs with scripts/dev-certificates.py.
+# Optional local exporter; never publish this port as a service.
+# metrics:
+#   bind_host: 127.0.0.1
+#   port: 9092
+#   max_connections: 4
+#   timeout_ms: 2000
 transport: wss
 agent:
   name: home-server

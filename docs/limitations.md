@@ -5,7 +5,13 @@
 - Sem streaming/SSE, WebSocket de aplicações, CONNECT/TRACE, HTTP/2 ou TCP genérico.
 - Uma requisição/resposta por conexão pública; sem keep-alive/pipelining público.
 - O protocolo WSS é v3, incompatível com M2/v2; atualizar ambos os binários juntos.
-- Não há status persistido, comando stop, dashboard, Prometheus ou serviço de sistema.
+- Não há status persistido, comando stop, dashboard administrativo ou serviço de sistema.
+- Métricas Prometheus são opt-in e locais, sem TLS/autenticação nesse listener;
+  processos locais podem lê-las. O Compose opcional coleta o Gateway, sem coletar
+  o exporter do Agent em outro namespace. Não há tracing, alertas configurados,
+  medição RSS/CPU ou retenção durável no laboratório Grafana/Prometheus.
+- Reiniciar o Gateway no overlay exige reiniciar seu sidecar Prometheus para
+  reanexar o namespace; os históricos em tmpfs são descartáveis.
 - Um único event loop por processo; não foi feito benchmark de throughput de proxy.
 - Limites não são proteção completa contra DoS; logs têm limite global de emissão
   e podem suprimir eventos, sem rotação/persistência internas. Não são trilha de auditoria completa.

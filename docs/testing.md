@@ -134,3 +134,26 @@ possa remover uma resposta que já entrou na escrita.
 
 Resultados executados e limitações: [M5](milestones/m5.md). OCSP, rotação
 automática/hot reload e auditoria externa não fazem parte dessa entrega.
+
+## Observabilidade do M6
+
+`e2e.metrics` executa dez cenários com processos reais: contagens/status/bytes,
+24 POSTs concorrentes, histograma cumulativo, gauges e reservas balanceados,
+timeout/CANCEL/upload incompleto, reinício/reconexão, identidade duplicada,
+privacidade e exclusão dos scrapes, Host/Origin/método/path, limite de conexões,
+deadline e configurações inseguras. Agent sem reconexão termina mesmo com
+exporter habilitado. Quatro casos Catch2 verificam o registro, RAII, cardinalidade
+máxima e atualizações simultâneas de quatro threads.
+
+```sh
+ctest --preset bootstrap -R e2e.metrics -V
+```
+
+O snapshot `build/<preset>/tests/metrics-sample.prom` contém apenas métricas de
+fixtures. CI o publica junto do relatório de carga. Preservar LF ao enviá-lo ao
+`promtool check metrics`: pipelines de texto do PowerShell podem converter para
+CRLF e invalidar o formato. O [laboratório](observability.md) testa ingestão real,
+oito painéis, datasource e autenticação via `scripts/check-monitoring.py`.
+Esse verificador não segue redirects nem imprime o segredo/headers/respostas;
+401/403 encerram sem repetir credenciais. Executar `check-demo.py` antes dele.
+Resultados e skips de plataforma efetivamente observados: [M6](milestones/m6.md).

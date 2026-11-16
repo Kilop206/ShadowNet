@@ -1,5 +1,19 @@
 # Arquitetura
 
+## Observabilidade M6
+
+`observability::Metrics` mantém contadores, gauges e histograma por processo,
+com labels limitadas às categorias fixas e às identidades configuradas.
+`HttpObservation` encerra cada observação uma vez por conclusão ou abandono.
+`HttpsServer`, proxies, sessões WSS e controladores atualizam o registro;
+reservas são acompanhadas na aquisição/liberação. O listener opcional
+`MetricsServer` lê snapshots consistentes e limita conexões, bytes e prazo.
+Não usa dados das requisições como nomes de séries. Não há nova dependência C++.
+
+Prometheus faz pull HTTP no loopback; o dashboard Grafana é provisionado por
+arquivo no overlay opcional. A coleta não cruza o túnel nem publica serviços
+extras. Ver [topologia, semântica e limites](../observability.md).
+
 ## Segurança M5
 
 `security` fornece políticas HTTP compartilhadas e inspeção de chaves/cadeia

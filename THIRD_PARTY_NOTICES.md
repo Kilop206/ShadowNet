@@ -9,6 +9,16 @@ OpenSSL 3.0+ (Apache License 2.0, https://www.openssl.org/source/license.html).
 OpenSSL is provided by the system and is not vendored or bundled by this project;
 binary redistributors must retain the license/notices of the actual distribution.
 
+## Optional monitoring images
+
+The M6 Compose overlay runs Prometheus 3.16.0 and Grafana 13.3.1 as separate
+optional containers, pinned by image digest. They are not linked into ShadowNet.
+Upstream source and license notices: [Prometheus (Apache-2.0)](https://github.com/prometheus/prometheus/blob/v3.16.0/LICENSE)
+and [Grafana (AGPL-3.0)](https://github.com/grafana/grafana/blob/v13.3.1/LICENSE).
+Images include their own third-party components and notices; retain those
+notices when redistributing the images. ShadowNet's MIT license does not
+replace their upstream licenses.
+
 ## Boost Software License - Version 1.0 - August 17th, 2003
 
 Permission is hereby granted, free of charge, to any person or organization

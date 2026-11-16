@@ -1,4 +1,10 @@
 # Template: replace paths and fingerprint. This is not a usable credential.
+# Optional local exporter; public HTTPS and WSS use different ports.
+# metrics:
+#   bind_host: 127.0.0.1
+#   port: 9091
+#   max_connections: 4
+#   timeout_ms: 2000
 transport: wss
 gateway:
   bind_host: 0.0.0.0

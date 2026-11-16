@@ -7,8 +7,8 @@
 | M3 Reverse Proxy MVP | HTTPS público, HTTP/1.1, 2 serviços, Host autorizado, IDs e teste E2E simultâneo | Implementado; validação em `milestones/m3.md` |
 | M4 Reliability | Orçamentos de buffers, backpressure, limites em voo, deadlines, carga e recuperação | Implementado; validação em `milestones/m4.md` |
 | M5 Production Security | Política detalhada, ciclo de certificados, parser hardening, auditoria e testes críticos | Implementado; validação em `milestones/m5.md` |
-| M6 Observability | Conexões, latência, throughput, RPS, erros e exportação Prometheus; Grafana opcional | Próximo |
-| M7 Cross-Platform | Validar GCC/Clang/MinGW, shutdown, instalação explícita de serviço e pacotes distribuíveis | Planejado; CI inicial no M1 |
+| M6 Observability | Conexões, latência, throughput, RPS, erros e exportação Prometheus; Grafana opcional | Implementado; validação em `milestones/m6.md` |
+| M7 Cross-Platform | Validar GCC/Clang/MinGW, shutdown, instalação explícita de serviço e pacotes distribuíveis | Próximo; CI inicial no M1 |
 | M8 Advanced | HTTP/2, multiplexação otimizada, failover, balanceamento, dashboard, RBAC e TCP autenticado | Aguardar fundamentos |
 
 O trabalho avança por critérios verificáveis. Produção depende de M2–M5 e

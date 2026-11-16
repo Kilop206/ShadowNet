@@ -1,5 +1,20 @@
 # Troubleshooting
 
+## Métricas do M6
+
+| Sintoma | Verificação |
+|---|---|
+| `/metrics` devolve conteúdo da aplicação na porta HTTPS | O exporter tem porta separada de loopback; ele não intercepta paths dos serviços |
+| Exporter não acessível remotamente | Esperado: bind só em loopback; instalar coletor no mesmo host/namespace |
+| Scrape devolve 400 | Usar HTTP/1.1 com Host local, sem Origin ou corpo; não usar hostname público |
+| Grafana retorna 401 | Usar `admin` e arquivo `grafana-admin-password` da PKI gerada com `--metrics`; não repetir senha incorreta |
+| Prometheus cai após reinício do Gateway | Reiniciar também `prometheus` no Compose para reanexar o namespace compartilhado |
+| Painéis RPS/latência vazios | Executar tráfego e aguardar dois scrapes; `rate` precisa de amostras, tráfego zero não produz p95 |
+| Histórico some ao reiniciar monitoramento | O laboratório usa tmpfs descartável; não configura retenção durável |
+| `promtool` acusa `gauge` com CR | Não passar snapshot por pipeline PowerShell que transforme LF em CRLF |
+
+Topologia, comandos e semântica: [observabilidade](observability.md).
+
 ## Segurança M5
 
 | Evento/sintoma | Verificação |
